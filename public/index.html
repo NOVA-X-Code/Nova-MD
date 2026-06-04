@@ -381,28 +381,26 @@
     </div>
 
     <script>
-        // Switch between methods
         function selectMethod(method) {
-            // Update button styles
-            document.querySelectorAll('.method-btn').forEach(btn => {
-                btn.classList.remove('active');
-            });
-            event.target.classList.add('active');
-
-            // Update content visibility
-            document.querySelectorAll('.content').forEach(content => {
-                content.classList.remove('active');
-            });
+            const qrBtn = document.querySelector('[onclick="selectMethod(\'qr\')"]');
+            const pairingBtn = document.querySelector('[onclick="selectMethod(\'pairing\')"]');
+            const qrContent = document.getElementById('qr-content');
+            const pairingContent = document.getElementById('pairing-content');
 
             if (method === 'qr') {
-                document.getElementById('qr-content').classList.add('active');
+                qrBtn.classList.add('active');
+                pairingBtn.classList.remove('active');
+                qrContent.classList.add('active');
+                pairingContent.classList.remove('active');
                 loadQRCode();
             } else if (method === 'pairing') {
-                document.getElementById('pairing-content').classList.add('active');
+                qrBtn.classList.remove('active');
+                pairingBtn.classList.add('active');
+                qrContent.classList.remove('active');
+                pairingContent.classList.add('active');
             }
         }
 
-        // Load QR Code
         function loadQRCode() {
             const qrcodeDiv = document.getElementById('qrcode');
             const statusDiv = document.getElementById('qr-status');
@@ -436,7 +434,6 @@
                 });
         }
 
-        // Generate Pairing Code
         async function generatePairingCode(event) {
             event.preventDefault();
             
@@ -446,7 +443,7 @@
             const btn = event.target.querySelector('button');
 
             btn.disabled = true;
-            btn.innerHTML = '<span class="spinner"></span> Génération...';
+            btn.innerHTML = '⏳ Génération...';
             statusDiv.className = 'status info';
             statusDiv.textContent = 'Génération du pairing code...';
             codeDiv.style.display = 'none';
@@ -479,225 +476,13 @@
             }
         }
 
-        // Load QR code on page load
         window.addEventListener('load', loadQRCode);
 
-        // Refresh QR code every 30 seconds
         setInterval(() => {
             if (document.getElementById('qr-content').classList.contains('active')) {
                 loadQRCode();
             }
         }, 30000);
-    </script>
-</body>
-</html>
-            border: 1px solid #f5c6cb;
-            display: block;
-        }
-
-        .status.info {
-            background: #d1ecf1;
-            color: #0c5460;
-            border: 1px solid #bee5eb;
-            display: block;
-        }
-
-        .spinner {
-            border: 4px solid #f0f0f0;
-            border-top: 4px solid #667eea;
-            border-radius: 50%;
-            width: 30px;
-            height: 30px;
-            animation: spin 1s linear infinite;
-            margin: 20px auto;
-        }
-
-        @keyframes spin {
-            0% {
-                transform: rotate(0deg);
-            }
-            100% {
-                transform: rotate(360deg);
-            }
-        }
-
-        .info-box {
-            background: #f0f7ff;
-            border-left: 4px solid #667eea;
-            padding: 15px;
-            margin-bottom: 20px;
-            border-radius: 4px;
-            font-size: 13px;
-            color: #555;
-            text-align: left;
-        }
-
-        .footer {
-            margin-top: 30px;
-            padding-top: 20px;
-            border-top: 1px solid #f0f0f0;
-            color: #999;
-            font-size: 12px;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <div class="logo">📱</div>
-            <h1>NOVA-MD</h1>
-            <p class="subtitle">Bot WhatsApp IA - Connexion Sécurisée</p>
-        </div>
-
-        <div class="tabs">
-            <button class="tab-btn active" onclick="switchTab('qr')">QR Code</button>
-            <button class="tab-btn" onclick="switchTab('pairing')">Pairing Code</button>
-        </div>
-
-        <!-- Tab QR Code -->
-        <div id="qr" class="tab-content active">
-            <div class="info-box">
-                📲 Ouvrez WhatsApp sur votre téléphone et scannez le QR code ci-dessous.
-            </div>
-            <div id="qrcode"></div>
-            <div id="qr-status" class="status"></div>
-        </div>
-
-        <!-- Tab Pairing Code -->
-        <div id="pairing" class="tab-content">
-            <div class="info-box">
-                🔑 Entrez votre numéro de téléphone pour générer un code d'association.
-            </div>
-            <form id="pairingForm">
-                <div class="form-group">
-                    <label for="phoneNumber">Numéro de Téléphone</label>
-                    <input
-                        type="tel"
-                        id="phoneNumber"
-                        placeholder="+212612345678"
-                        pattern="^\+?[0-9]{10,15}$"
-                        required
-                    />
-                    <p class="input-hint">Format: +212612345678 ou 212612345678</p>
-                </div>
-                <button type="submit">Générer Pairing Code</button>
-            </form>
-            <div id="pairing-status" class="status"></div>
-            <div id="pairing-code" style="display: none; margin-top: 20px;">
-                <label>Votre Pairing Code (valide 5 minutes)</label>
-                <div
-                    style="
-                        background: #f9f9f9;
-                        padding: 15px;
-                        border-radius: 8px;
-                        font-family: monospace;
-                        font-size: 24px;
-                        font-weight: bold;
-                        color: #667eea;
-                        text-align: center;
-                        letter-spacing: 2px;
-                    "
-                    id="codeDisplay"
-                ></div>
-                <p style="margin-top: 10px; color: #666; font-size: 12px;">
-                    Entrez ce code dans WhatsApp pour établir la connexion.
-                </p>
-            </div>
-        </div>
-
-        <div class="footer">
-            <p>🔒 Votre connexion est sécurisée et chiffrée.</p>
-            <p>v2.0.0 | NOVA-MD WhatsApp Bot</p>
-        </div>
-    </div>
-
-    <script>
-        function switchTab(tab) {
-            // Masquer tous les onglets
-            document.querySelectorAll('.tab-content').forEach((el) => {
-                el.classList.remove('active');
-            });
-            document.querySelectorAll('.tab-btn').forEach((el) => {
-                el.classList.remove('active');
-            });
-
-            // Afficher l'onglet sélectionné
-            document.getElementById(tab).classList.add('active');
-            event.target.classList.add('active');
-        }
-
-        // === QR Code ===
-        function loadQRCode() {
-            const qrcodeDiv = document.getElementById('qrcode');
-            const statusDiv = document.getElementById('qr-status');
-
-            statusDiv.textContent = 'Chargement du QR code...';
-            statusDiv.className = 'status info';
-
-            fetch('/api/qr-code')
-                .then((res) => res.json())
-                .then((data) => {
-                    if (data.qr) {
-                        qrcodeDiv.innerHTML = `<img src="${data.qr}" alt="QR Code" />`;
-                        statusDiv.textContent = '✅ QR Code prêt à scanner';
-                        statusDiv.className = 'status success';
-                    } else if (data.status === 'connected') {
-                        statusDiv.textContent = '✅ Bot connecté avec succès!';
-                        statusDiv.className = 'status success';
-                        qrcodeDiv.innerHTML =
-                            '<div style="padding: 20px; color: #28a745; font-size: 18px;">✅ Connecté</div>';
-                    } else {
-                        statusDiv.textContent = '❌ ' + (data.message || 'Erreur lors du chargement du QR code');
-                        statusDiv.className = 'status error';
-                    }
-                })
-                .catch((err) => {
-                    statusDiv.textContent = '❌ Erreur de connexion au serveur';
-                    statusDiv.className = 'status error';
-                    console.error(err);
-                });
-        }
-
-        // === Pairing Code ===
-        document.getElementById('pairingForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const phone = document.getElementById('phoneNumber').value;
-            const statusDiv = document.getElementById('pairing-status');
-            const codeDiv = document.getElementById('pairing-code');
-
-            statusDiv.textContent = 'Génération du pairing code...';
-            statusDiv.className = 'status info';
-
-            try {
-                const res = await fetch('/api/pairing-code', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ phoneNumber: phone }),
-                });
-
-                const data = await res.json();
-
-                if (data.code) {
-                    document.getElementById('codeDisplay').textContent = data.code;
-                    codeDiv.style.display = 'block';
-                    statusDiv.textContent = '✅ Pairing code généré avec succès';
-                    statusDiv.className = 'status success';
-                } else {
-                    statusDiv.textContent = '❌ ' + (data.message || 'Erreur lors de la génération');
-                    statusDiv.className = 'status error';
-                }
-            } catch (err) {
-                statusDiv.textContent = '❌ Erreur de connexion au serveur';
-                statusDiv.className = 'status error';
-                console.error(err);
-            }
-        });
-
-        // Charger le QR code au démarrage
-        window.addEventListener('load', loadQRCode);
-
-        // Rafraîchir le QR code toutes les 30 secondes
-        setInterval(loadQRCode, 30000);
     </script>
 </body>
 </html>
