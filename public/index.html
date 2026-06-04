@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NOVA-MD - Connexion WhatsApp</title>
+    <title>NOVA-MD v3.0 - Connexion WhatsApp</title>
     <style>
         * {
             margin: 0;
@@ -23,73 +23,79 @@
 
         .container {
             background: white;
-            border-radius: 15px;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
-            max-width: 500px;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 600px;
             width: 100%;
             padding: 40px;
-            text-align: center;
         }
 
         .header {
-            margin-bottom: 30px;
+            text-align: center;
+            margin-bottom: 40px;
         }
 
         .logo {
-            font-size: 48px;
+            font-size: 60px;
             margin-bottom: 15px;
         }
 
         h1 {
             color: #333;
-            font-size: 28px;
-            margin-bottom: 10px;
+            font-size: 32px;
+            margin-bottom: 5px;
+        }
+
+        .version {
+            color: #667eea;
+            font-weight: 600;
+            font-size: 12px;
         }
 
         .subtitle {
-            color: #666;
+            color: #999;
             font-size: 14px;
-            margin-bottom: 20px;
+            margin-top: 10px;
         }
 
-        .tabs {
-            display: flex;
-            border-bottom: 2px solid #f0f0f0;
+        .method-selector {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
             margin-bottom: 30px;
         }
 
-        .tab-btn {
-            flex: 1;
-            padding: 12px;
-            background: none;
-            border: none;
+        .method-btn {
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            background: white;
+            border-radius: 12px;
             cursor: pointer;
-            font-size: 14px;
+            font-size: 16px;
             font-weight: 600;
-            color: #999;
             transition: all 0.3s;
-            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
         }
 
-        .tab-btn.active {
-            color: #667eea;
+        .method-btn:hover {
+            border-color: #667eea;
+            background: #f9f9f9;
         }
 
-        .tab-btn.active::after {
-            content: '';
-            position: absolute;
-            bottom: -2px;
-            left: 0;
-            right: 0;
-            height: 2px;
-            background: #667eea;
+        .method-btn.active {
+            border-color: #667eea;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
         }
 
-        .tab-content {
+        .content {
             display: none;
         }
 
-        .tab-content.active {
+        .content.active {
             display: block;
             animation: slideIn 0.3s ease-in;
         }
@@ -105,15 +111,25 @@
             }
         }
 
+        .info-box {
+            background: #f0f7ff;
+            border-left: 4px solid #667eea;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            font-size: 14px;
+            color: #333;
+        }
+
         #qrcode {
             margin: 20px auto;
-            padding: 20px;
+            padding: 30px;
             background: #f9f9f9;
-            border-radius: 10px;
+            border-radius: 15px;
             display: flex;
             align-items: center;
             justify-content: center;
-            min-height: 300px;
+            min-height: 350px;
         }
 
         #qrcode img {
@@ -121,9 +137,14 @@
             height: auto;
         }
 
+        .qr-empty {
+            color: #999;
+            text-align: center;
+            font-size: 14px;
+        }
+
         .form-group {
             margin-bottom: 20px;
-            text-align: left;
         }
 
         label {
@@ -134,17 +155,15 @@
             font-size: 14px;
         }
 
-        input[type='text'],
         input[type='tel'] {
             width: 100%;
             padding: 12px;
             border: 2px solid #e0e0e0;
             border-radius: 8px;
-            font-size: 14px;
+            font-size: 16px;
             transition: all 0.3s;
         }
 
-        input[type='text']:focus,
         input[type='tel']:focus {
             outline: none;
             border-color: #667eea;
@@ -159,7 +178,7 @@
 
         button {
             width: 100%;
-            padding: 12px;
+            padding: 14px;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             border: none;
@@ -168,7 +187,6 @@
             font-weight: 600;
             cursor: pointer;
             transition: all 0.3s;
-            margin-top: 10px;
         }
 
         button:hover {
@@ -178,6 +196,12 @@
 
         button:active {
             transform: translateY(0);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
         }
 
         .status {
@@ -198,6 +222,275 @@
         .status.error {
             background: #f8d7da;
             color: #721c24;
+            border: 1px solid #f5c6cb;
+            display: block;
+        }
+
+        .status.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+            display: block;
+        }
+
+        .spinner {
+            display: inline-block;
+            border: 3px solid #f0f0f0;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .code-display {
+            background: #f9f9f9;
+            padding: 25px;
+            border-radius: 12px;
+            font-family: 'Courier New', monospace;
+            font-size: 36px;
+            font-weight: bold;
+            color: #667eea;
+            text-align: center;
+            letter-spacing: 4px;
+            margin: 20px 0;
+            border: 2px dashed #667eea;
+        }
+
+        .refresh-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            margin-top: 10px;
+        }
+
+        .refresh-btn:hover {
+            background: #764ba2;
+        }
+
+        .footer {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #f0f0f0;
+            text-align: center;
+            color: #999;
+            font-size: 12px;
+        }
+
+        .footer p {
+            margin: 5px 0;
+        }
+
+        .connected-msg {
+            background: #d4edda;
+            border: 2px solid #28a745;
+            border-radius: 12px;
+            padding: 30px;
+            text-align: center;
+            color: #155724;
+        }
+
+        .connected-msg .icon {
+            font-size: 60px;
+            margin-bottom: 15px;
+        }
+
+        .connected-msg h2 {
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">📱</div>
+            <h1>NOVA-MD</h1>
+            <p class="version">v3.0 - Powered by Nostra</p>
+            <p class="subtitle">Bot WhatsApp IA avec Groq API Gratuit</p>
+        </div>
+
+        <!-- Method Selection -->
+        <div class="method-selector">
+            <button class="method-btn active" onclick="selectMethod('qr')">
+                🔲 QR Code
+            </button>
+            <button class="method-btn" onclick="selectMethod('pairing')">
+                🔑 Pairing Code
+            </button>
+        </div>
+
+        <!-- QR Code Method -->
+        <div id="qr-content" class="content active">
+            <div class="info-box">
+                📲 Scannez le QR code ci-dessous avec WhatsApp sur votre téléphone.
+            </div>
+            <div id="qrcode">
+                <div class="qr-empty">
+                    <div class="spinner"></div>
+                    <p>Chargement du QR code...</p>
+                </div>
+            </div>
+            <button class="refresh-btn" onclick="loadQRCode()" style="width: auto;">🔄 Rafraîchir</button>
+            <div id="qr-status" class="status"></div>
+        </div>
+
+        <!-- Pairing Code Method -->
+        <div id="pairing-content" class="content">
+            <div class="info-box">
+                🔑 Entrez votre numéro WhatsApp pour obtenir un code d'association.
+            </div>
+            <form id="pairingForm" onsubmit="generatePairingCode(event)">
+                <div class="form-group">
+                    <label for="phoneNumber">Numéro de Téléphone</label>
+                    <input
+                        type="tel"
+                        id="phoneNumber"
+                        placeholder="+212612345678"
+                        pattern="^\+?[0-9]{10,15}$"
+                        required
+                    />
+                    <p class="input-hint">Format: +212612345678 ou 212612345678</p>
+                </div>
+                <button type="submit">Générer Pairing Code</button>
+            </form>
+            <div id="pairing-status" class="status"></div>
+            <div id="pairing-code-display" style="display: none;">
+                <p style="text-align: center; color: #666; margin: 20px 0; font-size: 14px;">
+                    ✅ Votre Pairing Code (valide 5 minutes)
+                </p>
+                <div class="code-display" id="codeDisplay"></div>
+                <p style="text-align: center; color: #666; font-size: 12px;">
+                    Allez dans WhatsApp → Appareils connectés → Utiliser ce code
+                </p>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>🔒 Connexion sécurisée et chiffrée</p>
+            <p>NOVA-MD v3.0 | Powered by Nostra</p>
+        </div>
+    </div>
+
+    <script>
+        // Switch between methods
+        function selectMethod(method) {
+            // Update button styles
+            document.querySelectorAll('.method-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+
+            // Update content visibility
+            document.querySelectorAll('.content').forEach(content => {
+                content.classList.remove('active');
+            });
+
+            if (method === 'qr') {
+                document.getElementById('qr-content').classList.add('active');
+                loadQRCode();
+            } else if (method === 'pairing') {
+                document.getElementById('pairing-content').classList.add('active');
+            }
+        }
+
+        // Load QR Code
+        function loadQRCode() {
+            const qrcodeDiv = document.getElementById('qrcode');
+            const statusDiv = document.getElementById('qr-status');
+
+            qrcodeDiv.innerHTML = '<div class="qr-empty"><div class="spinner"></div><p>Chargement du QR code...</p></div>';
+            statusDiv.className = 'status info';
+            statusDiv.textContent = 'Chargement en cours...';
+
+            fetch('/api/qr-code')
+                .then(res => res.json())
+                .then(data => {
+                    if (data.qr) {
+                        qrcodeDiv.innerHTML = `<img src="${data.qr}" alt="QR Code" />`;
+                        statusDiv.textContent = '✅ QR code prêt - Scannez maintenant!';
+                        statusDiv.className = 'status success';
+                    } else if (data.status === 'connected') {
+                        qrcodeDiv.innerHTML = '<div class="connected-msg"><div class="icon">✅</div><h2>Connecté!</h2><p>Le bot est prêt à utiliser</p></div>';
+                        statusDiv.textContent = '✅ Bot connecté avec succès!';
+                        statusDiv.className = 'status success';
+                    } else {
+                        qrcodeDiv.innerHTML = '<div class="qr-empty">❌ Erreur au chargement</div>';
+                        statusDiv.textContent = '❌ ' + (data.message || 'Impossible de charger le QR code');
+                        statusDiv.className = 'status error';
+                    }
+                })
+                .catch(err => {
+                    qrcodeDiv.innerHTML = '<div class="qr-empty">❌ Erreur de connexion</div>';
+                    statusDiv.textContent = '❌ Erreur de connexion au serveur';
+                    statusDiv.className = 'status error';
+                    console.error(err);
+                });
+        }
+
+        // Generate Pairing Code
+        async function generatePairingCode(event) {
+            event.preventDefault();
+            
+            const phone = document.getElementById('phoneNumber').value;
+            const statusDiv = document.getElementById('pairing-status');
+            const codeDiv = document.getElementById('pairing-code-display');
+            const btn = event.target.querySelector('button');
+
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span> Génération...';
+            statusDiv.className = 'status info';
+            statusDiv.textContent = 'Génération du pairing code...';
+            codeDiv.style.display = 'none';
+
+            try {
+                const res = await fetch('/api/pairing-code', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ phoneNumber: phone })
+                });
+
+                const data = await res.json();
+
+                if (data.code) {
+                    document.getElementById('codeDisplay').textContent = data.code;
+                    codeDiv.style.display = 'block';
+                    statusDiv.textContent = '✅ Pairing code généré avec succès!';
+                    statusDiv.className = 'status success';
+                } else {
+                    statusDiv.textContent = '❌ ' + (data.message || 'Erreur lors de la génération');
+                    statusDiv.className = 'status error';
+                }
+            } catch (err) {
+                statusDiv.textContent = '❌ Erreur de connexion au serveur';
+                statusDiv.className = 'status error';
+                console.error(err);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = 'Générer Pairing Code';
+            }
+        }
+
+        // Load QR code on page load
+        window.addEventListener('load', loadQRCode);
+
+        // Refresh QR code every 30 seconds
+        setInterval(() => {
+            if (document.getElementById('qr-content').classList.contains('active')) {
+                loadQRCode();
+            }
+        }, 30000);
+    </script>
+</body>
+</html>
             border: 1px solid #f5c6cb;
             display: block;
         }
