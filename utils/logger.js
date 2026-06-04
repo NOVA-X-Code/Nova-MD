@@ -1,5 +1,10 @@
-const chalk = require('chalk');
-const util = require('util');
+import chalk from 'chalk';
+import util from 'util';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 function getTimestamp() {
     return `[${new Date().toLocaleTimeString('fr-FR')}]`;
@@ -50,7 +55,7 @@ function formatMessage(level, ...args) {
     return `${timestamp} ${tag} ${prefix} ${coloredMessage}`;
 }
 
-module.exports = function (caller) {
+export function createLogger(caller) {
     const callerName = caller?.filename ? 
         caller.filename.split(/\\|\//).pop().replace('.js', '').toUpperCase() : 'NOVA-MD';
     
@@ -81,14 +86,14 @@ module.exports = function (caller) {
             console.log(`${chalk.gray.italic(getTimestamp())} ${commandTag} ${args.join(' ')}`);
         }
     };
-};
+}
 
-module.exports.error = (...args) => console.error(formatMessage('ERROR', ...args));
-module.exports.warn = (...args) => console.warn(formatMessage('WARN', ...args));
-module.exports.info = (...args) => console.info(formatMessage('INFO', ...args));
-module.exports.success = (...args) => console.log(formatMessage('SUCCESS', ...args));
-module.exports.update = (...args) => console.log(formatMessage('UPDATE', ...args));
-module.exports.debug = (...args) => {
+export const error = (...args) => console.error(formatMessage('ERROR', ...args));
+export const warn = (...args) => console.warn(formatMessage('WARN', ...args));
+export const info = (...args) => console.info(formatMessage('INFO', ...args));
+export const success = (...args) => console.log(formatMessage('SUCCESS', ...args));
+export const update = (...args) => console.log(formatMessage('UPDATE', ...args));
+export const debug = (...args) => {
     if (process.env.DEBUG === 'true') {
         console.log(formatMessage('DEBUG', ...args));
     }
