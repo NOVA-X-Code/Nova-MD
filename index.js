@@ -2,7 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { makeWASocket, useMultiFileAuthState, DisconnectReason, isJidGroup } from '@whiskeysockets/baileys';
+import { makeWASocket, useMultiFileAuthState, DisconnectReason, isJidGroup, Browsers, makeCacheableSignalKeyStore, delay } from '@whiskeysockets/baileys';
 import QRCode from 'qrcode';
 import axios from 'axios';
 import pino from 'pino';
@@ -101,10 +101,13 @@ async function start() {
 
         // Configuration du socket
         sock = makeWASocket({
-            auth: state,
-            printQRInTerminal: true,
-            logger: pino({ level: 'error' }),
-            browser: ['Ubuntu', 'Chrome', '22.04'],
+            auth: {
+                creds: state.creds,
+                keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'fatal' }).child({ level: 'fatal' })),
+            },
+            printQRInTerminal: false,
+            logger: pino({ level: 'fatal' }).child({ level: 'fatal' }),
+            browser: Browsers.macOS('Desktop'),
             mobile: false,
             markOnlineOnConnect: false,
             emitOwnEvents: true,
