@@ -1,598 +1,680 @@
 import 'dotenv/config';
-import express from 'express';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { makeWASocket, useMultiFileAuthState, DisconnectReason, isJidGroup, Browsers, makeCacheableSignalKeyStore, delay } from '@whiskeysockets/baileys';
+
+import fs, { existsSync, mkdirSync, rmSync } from 'fs';
+import path, { dirname } from 'path';
+import chalk from 'chalk';
+import syntaxerror from 'syntax-error';
+import { parsePhoneNumber as PhoneNumber } from 'awesome-phonenumber';
+import readline from 'readline';
 import QRCode from 'qrcode';
-import axios from 'axios';
+import { fileURLToPath } from 'url';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+import { smsg } from './lib/myfunc.js';
+import { compileAll } from './lib/compile.js';
+import makeWASocket, { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, Browsers, jidDecode, jidNormalizedUser, makeCacheableSignalKeyStore, delay } from '@whiskeysockets/baileys';
+import NodeCache from 'node-cache';
 import pino from 'pino';
-import { createLogger } from './utils/logger.js';
-import AuthManager from './utils/auth-manager.js';
-import DatabaseManager from './core/database-manager.js';
-import AIHandler from './core/ai-handler.js';
-import TimerManager from './core/timer-manager.js';
-import CommandExecutor from './core/command-executor.js';
-import handleAILogin from './commands/ai-login.js';
-import handleQuiz from './commands/quiz.js';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const log = createLogger(import.meta.url);
-
-// ============================================
-// CONFIGURATION
-// ============================================
-const PORT = process.env.PORT || 3000;
-const OWNER_NUMBER = process.env.OWNER_NUMBER || '';
-const IS_PRIVATE = process.env.IS_PRIVATE === 'true';
-const ENABLE_AI = process.env.ENABLE_AI_ASSISTANT === 'true';
-const AI_RESPONSE_DELAY = parseInt(process.env.AI_RESPONSE_DELAY || '120000');
-
-if (!OWNER_NUMBER) {
-    log.error('❌ OWNER_NUMBER non défini dans .env');
-    process.exit(1);
+import config from './config.js';
+import store from './lib/lightweight_store.js';
+import SaveCreds from './lib/session.js';
+import { server, PORT } from './lib/server.js';
+import { printLog } from './lib/print.js';
+import { writeErrorLog } from './lib/logger.js';
+import { handleMessages, handleGroupParticipantUpdate, handleStatus, handleCall } from './lib/messageHandler.js';
+import commandHandler from './lib/commandHandler.js';
+store.readFromFile();
+setInterval(() => store.writeToFile(), config.storeWriteInterval || 10000);
+setInterval(() => {
+    if (global.gc) {
+        global.gc();
+        console.log('🧹 Garbage collection completed');
+    }
+}, 60000);
+setInterval(() => {
+    const used = process.memoryUsage().rss / 1024 / 1024;
+    if (used > 400) {
+        printLog('warning', 'RAM too high (>400MB), restarting bot...');
+        process.exit(1);
+    }
+}, 30000);
+const phoneNumber = config.pairingNumber || config.ownerNumber || "923051391005";
+// Auto-create data directory and default files on startup
+const DATA_DEFAULTS = {
+    'owner.json': [],
+    'banned.json': [],
+    'premium.json': [],
+    'warnings.json': {},
+    'notes.json': {},
+    'autoAi.json': {},
+    'messageCount.json': { isPublic: true, messageCount: {} },
+    'userGroupData.json': { users: [], groups: [], antilink: {}, antibadword: {}, warnings: {}, sudo: [], welcome: {}, goodbye: {}, chatbot: {}, autoReaction: false },
+    'autoStatus.json': { enabled: false },
+    'autoread.json': { enabled: false },
+    'autotyping.json': { enabled: false },
+    'pmblocker.json': { enabled: false },
+    'anticall.json': { enabled: false },
+    'stealthMode.json': { enabled: false },
+    'autoBio.json': { enabled: false, customBio: null },
+    'autoReaction.json': { enabled: false },
+    'antidelete.json': { enabled: false },
+    'antilink.json': {},
+    'antibadword.json': {},
+};
+fs.mkdirSync('./data', { recursive: true });
+for (const [file, def] of Object.entries(DATA_DEFAULTS)) {
+    const fp = `./data/${file}`;
+    if (!fs.existsSync(fp))
+        fs.writeFileSync(fp, JSON.stringify(def, null, 2));
 }
-
-// ============================================
-// INITIALISATION
-// ============================================
-const app = express();
-app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
-
-let sock = null;
-let qrCodeUrl = null;
-let isConnected = false;
-let authManager = new AuthManager();
-let databaseManager = null;
-let aiHandler = null;
-let timerManager = new TimerManager(AI_RESPONSE_DELAY);
-let commandExecutor = null;
-let connectionErrorCount = 0;
-const MAX_CONSECUTIVE_ERRORS = 3;
-
-// ============================================
-// DÉMARRAGE
-// ============================================
-async function start() {
+let owner = [];
+try {
+    owner = JSON.parse(fs.readFileSync('./data/owner.json', 'utf-8'));
+}
+catch {
+    owner = [];
+}
+global.botname = config.botName || "NOVA-MD";
+global.themeemoji = "•";
+const pairingCode = !process.argv.includes("--qr-code");
+const useMobile = process.argv.includes("--mobile");
+let rl = null;
+let rlClosed = false;
+if (process.stdin.isTTY && !config.pairingNumber) {
+    rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout
+    });
+    rl.on('close', () => { rlClosed = true; });
+}
+const question = (text) => {
+    if (rl && !rlClosed) {
+        return new Promise((resolve) => rl.question(text, resolve));
+    }
+    else {
+        return Promise.resolve(config.ownerNumber || phoneNumber);
+    }
+};
+process.on('exit', () => {
+    if (rl && !rlClosed)
+        rl.close();
+});
+process.on('SIGINT', () => {
+    if (rl && !rlClosed)
+        rl.close();
+    process.exit(0);
+});
+function ensureSessionDirectory() {
+    const sessionPath = path.join(__dirname, 'session');
+    if (!existsSync(sessionPath)) {
+        mkdirSync(sessionPath, { recursive: true });
+    }
+    return sessionPath;
+}
+function hasValidSession() {
     try {
-        log.info('🚀 Démarrage de NOVA-MD...');
-
-        // Initialiser l'authentification
-        await authManager.initializeSessionDir();
-        
-        // Vérifier si une session existante est corrompue
-        const sessionExists = await authManager.sessionExists();
-        if (sessionExists) {
-            log.info('🔍 Vérification session existante...');
-            // Essayer de charger - si ça échoue, nettoyer
-            try {
-                const existingAuth = await authManager.loadAuthState();
-                if (!existingAuth || !existingAuth.creds) {
-                    log.warn('⚠️  Session corrompue détectée - nettoyage...');
-                    await authManager.clearAuthState();
-                }
-            } catch (err) {
-                log.warn('⚠️  Impossible de charger session - nettoyage...');
-                await authManager.clearAuthState();
+        const credsPath = path.join(__dirname, 'session', 'creds.json');
+        if (!existsSync(credsPath))
+            return false;
+        const fileContent = fs.readFileSync(credsPath, 'utf8');
+        if (!fileContent || fileContent.trim().length === 0) {
+            printLog('warning', 'creds.json exists but is empty');
+            return false;
+        }
+        try {
+            const creds = JSON.parse(fileContent);
+            if (!creds.noiseKey || !creds.signedIdentityKey || !creds.signedPreKey) {
+                printLog('warning', 'creds.json is missing required fields');
+                return false;
             }
+            if (creds.registered === false) {
+                printLog('warning', 'Session not registered. Clearing for fresh pairing...');
+                try {
+                    rmSync(path.join(__dirname, 'session'), { recursive: true, force: true });
+                }
+                catch (_e) { /* ignore */ }
+                return false;
+            }
+            printLog('success', 'Valid and registered session credentials found');
+            return true;
         }
-
-        // Initialiser la base de données (non-blocking)
-        if (process.env.DATABASE_URL) {
-            databaseManager = new DatabaseManager(process.env.DATABASE_URL);
-            // Don't await - let it initialize in background to not block WhatsApp socket
-            databaseManager.initialize().catch(err => {
-                log.warn('⚠️  Erreur initialisation DB:', err.message);
-            });
-        } else {
-            log.warn('⚠️  DATABASE_URL non défini - fonctionnalité de messages supprimés désactivée');
+        catch (_parseError) {
+            printLog('warning', 'creds.json contains invalid JSON');
+            return false;
         }
-
-        // Initialiser l'IA (Groq - Gratuit)
-        if (ENABLE_AI) {
-            aiHandler = new AIHandler(
-                process.env.GROQ_API_KEY,
-                process.env.AI_SYSTEM_PROMPT
-            );
-            log.info('✅ Assistant IA NOVA (Groq) initialisé - Powered by Nostra');
-        } else {
-            log.warn('⚠️  ENABLE_AI_ASSISTANT désactivé');
+    }
+    catch (error) {
+        printLog('error', `Error checking session validity: ${error.message}`);
+        return false;
+    }
+}
+async function initializeSession() {
+    ensureSessionDirectory();
+    const txt = config.sessionId;
+    if (!txt) {
+        if (hasValidSession()) {
+            printLog('success', 'Existing session found. Using saved credentials');
+            return true;
         }
-
-        // Charger les états d'authentification
-        const { state, saveCreds } = await useMultiFileAuthState(authManager.sessionPath);
-
-        // Configuration du socket
-        sock = makeWASocket({
+        return false;
+    }
+    if (hasValidSession())
+        return true;
+    try {
+        await SaveCreds(txt);
+        await delay(2000);
+        if (hasValidSession()) {
+            printLog('success', 'Session file verified and valid');
+            await delay(1000);
+            return true;
+        }
+        else {
+            printLog('error', 'Session file not valid after download');
+            return false;
+        }
+    }
+    catch (error) {
+        printLog('error', `Error downloading session: ${error.message}`);
+        return false;
+    }
+}
+server.listen(PORT, () => {
+    printLog('success', `Server listening on port ${PORT}`);
+});
+async function startNovaXCode() {
+    try {
+        const { version } = await fetchLatestBaileysVersion();
+        ensureSessionDirectory();
+        await delay(1000);
+        const { state, saveCreds } = await useMultiFileAuthState(`./session`);
+        const _saveCreds = async () => {
+            ensureSessionDirectory();
+            await saveCreds();
+        };
+        const msgRetryCounterCache = new NodeCache();
+        const ghostMode = await store.getSetting('global', 'stealthMode');
+        const isGhostActive = ghostMode && ghostMode.enabled;
+        const NovaXCode = makeWASocket({
+            version,
+            logger: pino({ level: 'silent' }),
+            browser: Browsers.macOS('Chrome'),
             auth: {
                 creds: state.creds,
-                keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'fatal' }).child({ level: 'fatal' })),
+                keys: makeCacheableSignalKeyStore(state.keys, pino({ level: "fatal" }).child({ level: "fatal" })),
             },
-            printQRInTerminal: false,
-            logger: pino({ level: 'fatal' }).child({ level: 'fatal' }),
-            browser: Browsers.macOS('Desktop'),
-            mobile: false,
-            markOnlineOnConnect: false,
-            emitOwnEvents: true,
-            connectTimeoutMs: 240000,
-            defaultQueryTimeoutMs: 180000,
+            markOnlineOnConnect: !isGhostActive,
+            generateHighQualityLinkPreview: true,
             syncFullHistory: false,
-            retryRequestDelayMs: 5000,
-            maxRetries: 3, 
-            keepAliveIntervalMs: 60000,
-            getMessage: async () => undefined,
-            shouldSyncHistoryMessage: () => false,
-            shouldIgnoreJid: (jid) => !jid.endsWith('@s.whatsapp.net') && !jid.endsWith('@g.us'),
+            getMessage: async (key) => {
+                const jid = jidNormalizedUser(key.remoteJid);
+                const msg = await store.loadMessage(jid, key.id);
+                return msg?.message || "";
+            },
+            msgRetryCounterCache,
+            defaultQueryTimeoutMs: 60000,
+            connectTimeoutMs: 60000,
+            keepAliveIntervalMs: 10000,
         });
-
-        // Timeout pour détecter les connexions qui traînent
-        const connectionTimeout = setTimeout(async () => {
-            if (!isConnected && !qrCodeUrl) {
-                log.error('❌ Timeout: Pas de QR code généré après 10s');
-                qrCodeUrl = null;
-                await authManager.clearAuthState();
-                setTimeout(start, 3000);
-            }
-        }, 10000);
-
-        // ============================================
-        // ÉVÉNEMENTS SOCKET
-        // ============================================
-        sock.ev.on('creds.update', saveCreds);
-
-        let reconnectCount = 0;
-        const maxReconnectAttempts = 5;
-
-        sock.ev.on('connection.update', async (update) => {
-            const { connection, lastDisconnect, qr, isOnline } = update;
-
-            if (qr) {
-                // Générer le QR code
-                log.info('📱 QR Code reçu');
-                clearTimeout(connectionTimeout);
-                qrCodeUrl = await QRCode.toDataURL(qr);
-                connectionErrorCount = 0;
-                reconnectCount = 0;
-            }
-
-            if (isOnline === true) {
-                log.info('🌐 En ligne');
-            }
-
-            if (isOnline === false) {
-                log.warn('🌐 Hors ligne');
-            }
-
-            if (connection === 'open') {
-                isConnected = true;
-                reconnectCount = 0;
-                connectionErrorCount = 0;
-                clearTimeout(connectionTimeout);
-                log.info('✅ WhatsApp connecté avec succès');
-                log.info(`📞 Numéro: ${sock.user?.id || 'Unknown'}`);
-            }
-
-            if (connection === 'close') {
-                isConnected = false;
-                const reason = lastDisconnect?.error?.output?.statusCode;
-                log.warn(`⚠️  Déconnecté: ${reason || 'Connexion fermée'}`);
-
-                // Gérer les erreurs 405 (session expirée)
-                if (reason === 405) {
-                    connectionErrorCount++;
-                    log.warn(`🔄 Stream resumé (${connectionErrorCount}/${MAX_CONSECUTIVE_ERRORS})`);
-
-                    if (connectionErrorCount >= MAX_CONSECUTIVE_ERRORS) {
-                        log.error('❌ Session invalide - nettoyage et nouvelle connexion');
-                        qrCodeUrl = null;
-                        connectionErrorCount = 0;
-                        reconnectCount = 0;
-
-                        // Nettoyer la session expirée
-                        await authManager.clearAuthState();
-                        log.info('🧹 Session nettoyée');
-
-                        // Relancer avec délai long
-                        const delay = 5000;
-                        log.info(`⏳ Nouvelle tentative dans ${delay}ms...`);
-                        setTimeout(start, delay);
-                        return;
-                    }
-                } else if (reason === DisconnectReason.loggedOut) {
-                    log.warn('🔄 Session expirée - reconnexion requise');
-                    connectionErrorCount = 0;
-                    qrCodeUrl = null;
-                    await authManager.clearAuthState();
-                    process.exit(0);
-                } else if (reason === DisconnectReason.connectionClosed) {
-                    log.warn('🔄 Connexion fermée - reconnexion...');
-                    connectionErrorCount = 0;
-                } else {
-                    connectionErrorCount++;
-                }
-
-                // Reconnecter automatiquement avec délai exponentiel
-                const delay = Math.min(1000 * Math.pow(2, reconnectCount), 30000);
-                log.info(`⏳ Nouvelle tentative dans ${delay}ms...`);
-                setTimeout(start, delay);
-                reconnectCount++;
-            }
-        });
-
-        sock.ev.on('messages.upsert', async (m) => {
-            for (const msg of m.messages) {
-                if (!msg.message) continue;
-
-                try {
-                    await handleMessage(msg);
-                } catch (error) {
-                    log.error('❌ Erreur traitement message:', error);
-                }
-            }
-        });
-
-        // Gérer les messages supprimés
-        sock.ev.on('messages.update', async (updates) => {
-            for (const { key, update } of updates) {
-                if (update.message === null && databaseManager) {
-                    // Message supprimé
-                    const msgId = key.id;
-                    log.info(`🗑️  Message supprimé détecté: ${msgId}`);
-
-                    // Récupérer les informations du message (si disponibles)
-                    const sender = key.participant || key.remoteJid;
-                    await databaseManager.saveDeletedMessage(
-                        msgId,
-                        sender,
-                        '[Message supprimé]',
-                        null,
-                        Date.now()
-                    );
-                }
-            }
-        });
-
-        global.sock = sock;
-    } catch (error) {
-        log.error('❌ Erreur démarrage:', error);
-        setTimeout(start, 3000);
-    }
-}
-
-// ============================================
-// GESTION DES MESSAGES
-// ============================================
-async function handleMessage(msg) {
-    try {
-        const remoteJid = msg.key.remoteJid;
-        const isGroupMsg = isJidGroup(remoteJid);
-        const sender = msg.key.participant || remoteJid;
-        const messageContent = msg.message?.conversation ||
-            msg.message?.extendedTextMessage?.text ||
-            msg.message?.imageMessage?.caption ||
-            msg.message?.videoMessage?.caption ||
-            '';
-
-        // Ignorer les messages du bot lui-même
-        if (msg.key.fromMe) return;
-
-        log.info(`📨 Message de ${sender}: "${messageContent.substring(0, 50)}"`);
-
-        // ============================================
-        // MODE PRIVÉ
-        // ============================================
-        if (IS_PRIVATE && sender !== OWNER_NUMBER) {
-            log.warn(`🔒 Utilisateur non autorisé: ${sender}`);
-            return;
-        }
-
-        // ============================================
-        // COMMANDES
-        // ============================================
-        if (messageContent.startsWith('!')) {
-            await handleCommand(messageContent, msg, sender, remoteJid);
-            return;
-        }
-
-        // ============================================
-        // MODE IA ASSISTANT
-        // ============================================
-        if (ENABLE_AI && aiHandler && sender !== OWNER_NUMBER && !isGroupMsg) {
-            // Démarrer un timer pour la réponse IA automatique
-            timerManager.startTimer(sender, msg.key.id, messageContent);
-
-            // Ajouter le callback du timer
-            timerManager.onTimeout(sender, async (senderNum, messageId, content) => {
-                try {
-                    log.info(`🤖 Timer expiré - IA répond automatiquement à ${senderNum}`);
-
-                    const aiResponse = await aiHandler.generateResponse(
-                        content,
-                        senderNum,
-                        'Le propriétaire n\'a pas répondu. Réponds maintenant.'
-                    );
-
-                    await sock.sendMessage(senderNum, {
-                        text: aiResponse,
-                    });
-
-                    // Nettoyer l'historique après la réponse
-                    aiHandler.clearConversationHistory(senderNum);
-                } catch (error) {
-                    log.error('❌ Erreur réponse IA automatique:', error);
-                }
-            });
-
-            // Ajouter le message à l'historique IA
-            if (aiHandler) {
-                aiHandler.addMessageToHistory(sender, 'user', messageContent);
-            }
-
-            // Notifier le propriétaire
-            await sock.sendMessage(OWNER_NUMBER, {
-                text: `📱 Nouveau message de ${sender}:\n\n${messageContent}`,
-            });
-        }
-    } catch (error) {
-        log.error('❌ Erreur traitement message:', error);
-    }
-}
-
-// ============================================
-// GESTION DES COMMANDES
-// ============================================
-async function handleCommand(messageContent, msg, sender, remoteJid) {
-    try {
-        const args = messageContent.slice(1).split(' ');
-        const command = args[0].toLowerCase();
-        const commandArgsStr = args.slice(1).join(' ');
-
-        log.info(`⚙️  Commande: ${command} de ${sender}`);
-
-        // ============================================
-        // COMMANDES SPÉCIALES IA
-        // ============================================
-        if (command === 'ai') {
-            if (args[1]?.toLowerCase() === 'login') {
-                // !ai login <clé_groq>
-                const result = await handleAILogin(messageContent.slice(1), global.sock, sender, aiHandler);
-                await global.sock.sendMessage(sender, { text: result });
+        NovaXCode.store = store;
+        const originalSendPresenceUpdate = NovaXCode.sendPresenceUpdate;
+        const originalReadMessages = NovaXCode.readMessages;
+        const originalSendReceipt = NovaXCode.sendReceipt;
+        NovaXCode.sendPresenceUpdate = async function (...args) {
+            const ghostMode = await store.getSetting('global', 'stealthMode');
+            if (ghostMode && ghostMode.enabled) {
+                printLog('info', '👻 Blocked presence update (stealth mode)');
                 return;
             }
-
-            if (commandArgsStr.trim()) {
-                // !ai <question>
-                if (!aiHandler || !aiHandler.isReady()) {
-                    await global.sock.sendMessage(sender, {
-                        text: '❌ Erreur: Clé Groq non configurée.\n\nUtilise d\'abord: !ai login <votre_clé_groq>\n\n💡 Obtenir votre clé gratuite:\nhttps://console.groq.com'
-                    });
+            return originalSendPresenceUpdate.apply(this, args);
+        };
+        NovaXCode.readMessages = async function (...args) {
+            const ghostMode = await store.getSetting('global', 'stealthMode');
+            if (ghostMode && ghostMode.enabled)
+                return;
+            return originalReadMessages.apply(this, args);
+        };
+        if (originalSendReceipt) {
+            NovaXCode.sendReceipt = async function (...args) {
+                const ghostMode = await store.getSetting('global', 'stealthMode');
+                if (ghostMode && ghostMode.enabled)
+                    return;
+                return originalSendReceipt.apply(this, args);
+            };
+        }
+        const originalQuery = NovaXCode.query;
+        NovaXCode.query = async function (node, ...args) {
+            const ghostMode = await store.getSetting('global', 'stealthMode');
+            if (ghostMode && ghostMode.enabled) {
+                if (node && node.tag === 'receipt')
+                    return;
+                if (node && node.attrs && (node.attrs.type === 'read' || node.attrs.type === 'read-self'))
+                    return;
+            }
+            return originalQuery.apply(this, [node, ...args]);
+        };
+        NovaXCode.isGhostMode = async () => {
+            const ghostMode = await store.getSetting('global', 'stealthMode');
+            return ghostMode && ghostMode.enabled;
+        };
+        NovaXCode.ev.on('creds.update', _saveCreds);
+        store.bind(NovaXCode.ev);
+        NovaXCode.ev.on('messages.upsert', async (chatUpdate) => {
+            try {
+                const mek = chatUpdate.messages[0];
+                if (!mek.message)
+                    return;
+                mek.message = (Object.keys(mek.message)[0] === 'ephemeralMessage')
+                    ? mek.message.ephemeralMessage.message
+                    : mek.message;
+                if (mek.key && mek.key.remoteJid === 'status@broadcast') {
+                    await handleStatus(NovaXCode, chatUpdate);
                     return;
                 }
-
+                if (!NovaXCode.public && !mek.key.fromMe && chatUpdate.type === 'notify') {
+                    const isGroup = mek.key?.remoteJid?.endsWith('@g.us');
+                    if (!isGroup)
+                        return;
+                }
+                if (mek.key.id.startsWith('BAE5') && mek.key.id.length === 16)
+                    return;
+                if (NovaXCode?.msgRetryCounterCache) {
+                    NovaXCode.msgRetryCounterCache.clear();
+                }
                 try {
-                    log.info(`🤖 Question IA: "${commandArgsStr}"`);
-                    const response = await aiHandler.generateResponse(commandArgsStr, sender);
-                    await global.sock.sendMessage(sender, { text: response });
-                } catch (error) {
-                    log.error('❌ Erreur réponse IA:', error);
-                    await global.sock.sendMessage(sender, {
-                        text: `❌ Erreur: ${error.message}`
+                    await handleMessages(NovaXCode, chatUpdate);
+                }
+                catch (err) {
+                    printLog('error', `Error in handleMessages: ${err.message}`);
+                    if (mek.key && mek.key.remoteJid) {
+                        await NovaXCode.sendMessage(mek.key.remoteJid, {
+                            text: '❌ An error occurred while processing your message.',
+                            contextInfo: {
+                                forwardingScore: 1,
+                                isForwarded: true,
+                                forwardedNewsletterMessageInfo: {
+                                    newsletterJid: '120363319098372999@newsletter',
+                                    newsletterName: 'GlobalTechInc',
+                                    serverMessageId: -1
+                                }
+                            }
+                        }).catch(console.error);
+                    }
+                }
+            }
+            catch (err) {
+                printLog('error', `Error in messages.upsert: ${err.message}`);
+            }
+        });
+        NovaXCode.decodeJid = (jid) => {
+            if (!jid)
+                return jid;
+            if (/:\d+@/gi.test(jid)) {
+                const decode = jidDecode(jid) || {};
+                return decode.user && decode.server && `${decode.user }@${ decode.server}` || jid;
+            }
+            else
+                return jid;
+        };
+        NovaXCode.ev.on('contacts.update', (update) => {
+            for (const contact of update) {
+                const id = NovaXCode.decodeJid(contact.id);
+                if (store && store.contacts)
+                    store.contacts[id] = { id, name: contact.notify };
+            }
+        });
+        NovaXCode.getName = (jid, withoutContact = false) => {
+            const id = NovaXCode.decodeJid(jid);
+            withoutContact = NovaXCode.withoutContact || withoutContact;
+            let v;
+            if (id.endsWith("@g.us"))
+                return new Promise(async (resolve) => {
+                    v = store.contacts[id] || {};
+                    if (!(v.name || v.subject))
+                        v = NovaXCode.groupMetadata(id) || {};
+                    resolve(v.name || v.subject || PhoneNumber(`+${ id.replace('@s.whatsapp.net', '')}`).number?.international);
+                });
+            else
+                v = id === '0@s.whatsapp.net' ? {
+                    id,
+                    name: 'WhatsApp'
+                } : id === NovaXCode.decodeJid(NovaXCode.user.id) ?
+                    NovaXCode.user :
+                    (store.contacts[id] || {});
+            return (withoutContact ? '' : v.name) || v.subject || v.verifiedName || PhoneNumber(`+${ jid.replace('@s.whatsapp.net', '')}`).number?.international;
+        };
+        NovaXCode.public = true;
+        NovaXCode.serializeM = (m) => smsg(NovaXCode, m, store);
+        const isRegistered = state.creds?.registered === true;
+        if (pairingCode && !isRegistered) {
+            if (useMobile)
+                throw new Error('Cannot use pairing code with mobile api');
+            let phoneNumberInput;
+            if (config.pairingNumber) {
+                phoneNumberInput = config.pairingNumber;
+            }
+            else if (process.env.PAIRING_NUMBER) {
+                phoneNumberInput = process.env.PAIRING_NUMBER;
+            }
+            else if (rl && !rlClosed) {
+                phoneNumberInput = await question(chalk.bgBlack(chalk.greenBright(`Please type your WhatsApp number 😍\nFormat: 923001234567 (without + or spaces) : `)));
+            }
+            else {
+                phoneNumberInput = phoneNumber;
+                printLog('info', `Using default phone number: ${phoneNumberInput}`);
+            }
+            phoneNumberInput = phoneNumberInput.replace(/[^0-9]/g, '');
+            const pn = PhoneNumber(`+${ phoneNumberInput}`);
+            if (!pn.valid) {
+                printLog('error', 'Invalid phone number format');
+                if (rl && !rlClosed)
+                    rl.close();
+                process.exit(1);
+            }
+            const doPairing = async (num, attempt = 1) => {
+                try {
+                    let code = await NovaXCode.requestPairingCode(num);
+                    code = code?.match(/.{1,4}/g)?.join("-") || code;
+                    console.log(chalk.black(chalk.bgGreen(`Your Pairing Code : `)), chalk.black(chalk.white(code)));
+                    printLog('success', `Pairing code generated: ${code}`);
+                    if (rl && !rlClosed) {
+                        rl.close();
+                        rl = null;
+                    }
+                }
+                catch (error) {
+                    if (attempt < 3) {
+                        try {
+                            rmSync('./session', { recursive: true, force: true });
+                        }
+                        catch (_e) { /* ignore */ }
+                        await delay(3000);
+                        startNovaXCode();
+                    }
+                    else {
+                        printLog('error', 'All 3 pairing attempts failed. Please restart manually.');
+                    }
+                }
+            };
+            setTimeout(() => doPairing(phoneNumberInput), 3000);
+        }
+        else if (isRegistered) {
+            if (rl && !rlClosed) {
+                rl.close();
+                rl = null;
+            }
+        }
+        else {
+            printLog('warning', 'Waiting for connection to establish...');
+            if (rl && !rlClosed) {
+                rl.close();
+                rl = null;
+            }
+        }
+        NovaXCode.ev.on('connection.update', async (s) => {
+            const { connection, lastDisconnect, qr } = s;
+            if (qr) {
+                if (!pairingCode) {
+                    try {
+                        console.log(await QRCode.toString(qr, { type: 'terminal', small: true }));
+                    }
+                    catch (_e) {
+                        console.log('QR:', qr);
+                    }
+                }
+            }
+            if (connection === "open") {
+                printLog('success', 'Bot connected successfully!');
+                try {
+                    const setbioModule = await import('./plugins/setbio.js');
+                    const startAutoBio = setbioModule.startAutoBio || setbioModule.default?.startAutoBio;
+                    if (typeof startAutoBio === 'function')
+                        startAutoBio(NovaXCode);
+                }
+                catch (e) {
+                    printLog('error', `Failed to start auto bio: ${e.message}`);
+                }
+                const ghostMode = await store.getSetting('global', 'stealthMode');
+                if (ghostMode && ghostMode.enabled) {
+                    printLog('info', '👻 STEALTH MODE ACTIVE');
+                }
+                printLog('success', `Connected to => ${ JSON.stringify(NovaXCode.user, null, 2)}`);
+                try {
+                    const botNumber = `${NovaXCode.user.id.split(':')[0] }@s.whatsapp.net`;
+                    const ghostStatus = (ghostMode && ghostMode.enabled) ? '\n👻 Stealth Mode: ACTIVE' : '';
+                    await NovaXCode.sendMessage(botNumber, {
+                        text: `🤖 Bot Connected Successfully!\n\n⏰ Time: ${new Date().toLocaleString()}\n✅ Status: Online and Ready!${ghostStatus}\n\n✅Make sure to join below channel`,
+                        contextInfo: {
+                            forwardingScore: 1,
+                            isForwarded: true,
+                            forwardedNewsletterMessageInfo: {
+                                newsletterJid: '120363319098372999@newsletter',
+                                newsletterName: 'GlobalTechInc',
+                                serverMessageId: -1
+                            }
+                        }
                     });
                 }
-                return;
-            } else {
-                await global.sock.sendMessage(sender, {
-                    text: '🤖 **Assistant IA NOVA - Powered by Nostra**\n\n📝 Utilisation:\n• !ai <question> - Poser une question\n• !ai login <clé> - Configurer votre clé Groq\n\n💡 Exemple:\n!ai Quelle est la capitale de la France?'
-                });
-                return;
+                catch (error) {
+                    printLog('error', `Failed to send connection message: ${error.message}`);
+                }
+                await delay(1999);
+                try {
+                    owner = JSON.parse(fs.readFileSync('./data/owner.json', 'utf-8'));
+                }
+                catch (_e) { }
+                printLog('info', `[ ${config.botName || 'NOVA-MD'} ]`);
+                printLog('info', `WA NUMBER  : ${owner[0] || config.ownerNumber || ''}`);
+                printLog('success', `Bot Connected Successfully!`);
+                printLog('info', `Plugins   : ${commandHandler.commands.size}`);
+                printLog('info', `Prefixes   : ${config.prefixes.join(', ')}`);
+                printLog('store', `Backend    : ${store.getStats().backend}`);
+                console.log();
             }
-        }
-
-        // ============================================
-        // COMMANDE QUIZ
-        // ============================================
-        if (command === 'quiz') {
-            const quizMessage = messageContent.slice(1);
-            const result = await handleQuiz(quizMessage, global.sock, sender, aiHandler);
-            await global.sock.sendMessage(remoteJid, { text: result });
-            return;
-        }
-
-        // ============================================
-        // COMMANDES CLASSIQUES
-        // ============================================
-
-        const context = {
-            sock: global.sock,
-            msg: msg,
-            sender: sender,
-            remoteJid: remoteJid,
-            args: args.slice(1),
-            ownerNumber: OWNER_NUMBER,
-            aiHandler: aiHandler,
-            databaseManager: databaseManager,
-            timerManager: timerManager,
-            replyWithTag: async (socket, text, message, jid) => {
-                await socket.sendMessage(jid || message.key.remoteJid, {
-                    text: text,
-                    mentions: message.key.participant ? [message.key.participant] : [],
-                });
-            },
-        };
-
-        // Importer les commandes dynamiquement
-        const commandPath = path.join(__dirname, 'commands', `${command}.js`);
-        try {
-            const cmdModule = await import(`file://${commandPath}`);
-            await cmdModule.default.run(context);
-        } catch (error) {
-            if (error.code === 'MODULE_NOT_FOUND') {
-                log.warn(`❌ Commande introuvable: ${command}`);
-                await context.replyWithTag(
-                    global.sock,
-                    `❌ Commande non trouvée: *${command}*\nTapez *!help* pour voir les commandes disponibles.`,
-                    msg,
-                    sender
-                );
-            } else {
-                throw error;
+            if (connection === 'close') {
+                const statusCode = lastDisconnect?.error?.output?.statusCode;
+                const shouldReconnect = statusCode !== DisconnectReason.loggedOut && statusCode !== 401;
+                if (statusCode === DisconnectReason.loggedOut || statusCode === 401) {
+                    try {
+                        rmSync('./session', { recursive: true, force: true });
+                    }
+                    catch (_e) { /* ignore */ }
+                    await delay(3000);
+                    startNovaXCode();
+                    return;
+                }
+                if (shouldReconnect) {
+                    printLog('connection', 'Reconnecting in 5 seconds...');
+                    await delay(5000);
+                    startNovaXCode();
+                }
             }
-        }
-    } catch (error) {
-        log.error('❌ Erreur traitement commande:', error);
-        await global.sock.sendMessage(sender, {
-            text: '❌ Erreur lors de l\'exécution de la commande.',
         });
+        NovaXCode.ev.on('call', async (calls) => {
+            await handleCall(NovaXCode, calls);
+        });
+        NovaXCode.ev.on('group-participants.update', async (update) => {
+            await handleGroupParticipantUpdate(NovaXCode, update);
+        });
+        NovaXCode.ev.on('status.update', async (status) => {
+            await handleStatus(NovaXCode, status);
+        });
+        NovaXCode.ev.on('messages.reaction', async (reaction) => {
+            await handleStatus(NovaXCode, reaction);
+        });
+        return NovaXCode;
+    }
+    catch (error) {
+        printLog('error', `Error in startNovaXCode: ${error.message}`);
+        if (rl && !rlClosed) {
+            rl.close();
+            rl = null;
+        }
+        await delay(5000);
+        startNovaXCode();
     }
 }
-
-// ============================================
-// ROUTES EXPRESS
-// ============================================
-app.get('/api/qr-code', (req, res) => {
-    log.info(`📋 Demande QR code - isConnected: ${isConnected}, qrCodeUrl: ${!!qrCodeUrl}`);
+async function waitForSessionCreation() {
+    printLog('info', '🔄 Waiting for session to be created via web interface...');
+    printLog('info', `📱 Open http://localhost:${config.port || 5000}/pairing in your browser`);
     
-    if (isConnected) {
-        res.json({ 
-            success: true,
-            status: 'connected',
-            message: 'Bot connecté avec succès'
-        });
-    } else if (qrCodeUrl) {
-        res.json({ 
-            success: true,
-            qr: qrCodeUrl,
-            message: 'QR code prêt à scanner'
-        });
-    } else {
-        res.status(202).json({ 
-            success: false,
-            message: 'QR code en attente de génération',
-            hint: 'Le serveur initialise la connexion WhatsApp. Patientez...'
-        });
-    }
-});
-
-app.post('/api/pairing-code', async (req, res) => {
-    try {
-        const { phoneNumber } = req.body;
-
-        if (!phoneNumber) {
-            return res.status(400).json({ success: false, message: 'Numéro de téléphone requis' });
-        }
-
-        // Formater le numéro (supprimer tous les caractères non-numériques)
-        const formattedNumber = phoneNumber.replace(/[^0-9]/g, '');
-
-        if (!formattedNumber || formattedNumber.length < 10) {
-            return res.status(400).json({ success: false, message: 'Numéro de téléphone invalide' });
-        }
-
-        if (!sock) {
-            log.error('❌ Socket non disponible pour pairing code');
-            return res.status(503).json({ success: false, message: 'Serveur non prêt - reconnexion en cours' });
-        }
-
-        if (!sock.requestPairingCode || typeof sock.requestPairingCode !== 'function') {
-            log.error('❌ Méthode requestPairingCode non disponible');
-            return res.status(503).json({ success: false, message: 'Pairing code non supporté' });
-        }
-
-        log.info(`🔑 Demande pairing code pour: ${formattedNumber}`);
-
-        // Générer le pairing code avec timeout de 30s
-        const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Timeout génération pairing code')), 30000)
-        );
-
-        let code;
-        try {
-            code = await Promise.race([
-                sock.requestPairingCode(formattedNumber),
-                timeoutPromise
-            ]);
-        } catch (err) {
-            if (err.message.includes('Timeout')) {
-                return res.status(408).json({ success: false, message: 'Timeout: serveur non réactif' });
+    const maxWaitTime = 15 * 60 * 1000; // 15 minutes
+    const startTime = Date.now();
+    const checkInterval = 5000; // Check every 5 seconds
+    
+    return new Promise((resolve, reject) => {
+        const checkLoop = setInterval(() => {
+            if (hasValidSession()) {
+                clearInterval(checkLoop);
+                printLog('success', '✅ Session detected! Starting bot...');
+                resolve();
             }
-            throw err;
-        }
+            
+            if (Date.now() - startTime > maxWaitTime) {
+                clearInterval(checkLoop);
+                reject(new Error('Session creation timeout (15 minutes)'));
+            }
+        }, checkInterval);
+    });
+}
 
-        if (!code) {
-            return res.status(500).json({ success: false, message: 'Aucun code généré par le serveur' });
+async function main() {
+    await compileAll();
+    await commandHandler.loadCommands();
+    printLog('info', 'Starting MEGA MD BOT...');
+    
+    // Check if we have a valid session
+    if (!hasValidSession()) {
+        printLog('warning', '⚠️ No valid session found');
+        
+        // Try to initialize from config
+        const initialized = await initializeSession();
+        if (!initialized) {
+            printLog('info', '🌐 Launching web pairing interface...');
+            try {
+                await waitForSessionCreation();
+            } catch (error) {
+                printLog('error', `Session creation failed: ${error.message}`);
+                if (rl && !rlClosed) rl.close();
+                process.exit(1);
+            }
         }
-
-        // Formater le code (ajouter des tirets tous les 4 caractères)
-        const formattedCode = code.toString().replace(/(.{4})/g, '$1-').replace(/-$/, '');
-        
-        log.success(`✅ Pairing code généré: ${formattedCode}`);
-
-        res.json({ 
-            success: true,
-            code: formattedCode,
-            phoneNumber: formattedNumber,
-            expiresIn: '5 minutes'
-        });
-    } catch (error) {
-        log.error('❌ Erreur pairing code:', error.message);
-        
-        // Meilleur messages d'erreur selon le type
-        let message = 'Erreur lors de la génération du pairing code';
-        if (error.message.includes('too many')) {
-            message = 'Trop de tentatives - attendez 10 minutes';
-        } else if (error.message.includes('invalid')) {
-            message = 'Numéro de téléphone invalide';
-        } else if (error.message.includes('network')) {
-            message = 'Erreur réseau - vérifiez votre connexion';
-        }
-        
-        res.status(500).json({ success: false, message });
+    } else {
+        printLog('success', '✅ Valid session found, skipping pairing');
     }
-});
-
-app.get('/api/status', (req, res) => {
-    res.json({
-        connected: isConnected,
-        ownerNumber: OWNER_NUMBER,
-        privateMode: IS_PRIVATE,
-        aiEnabled: ENABLE_AI,
-        botNumber: sock?.user?.id || null,
+    
+    await delay(3000);
+    startNovaXCode().catch((error) => {
+        printLog('error', `Fatal error: ${error.message}`);
+        if (rl && !rlClosed)
+            rl.close();
+        process.exit(1);
+    });
+}
+main();
+// Session cleanup interval
+const sessionDir = path.join(process.cwd(), 'session');
+setInterval(() => {
+    if (!fs.existsSync(sessionDir))
+        return;
+    fs.readdir(sessionDir, (err, files) => {
+        if (err)
+            return;
+        for (const file of files) {
+            if (file === 'creds.json')
+                continue;
+            if (file.startsWith('app-state-sync-key-'))
+                continue;
+            fs.unlink(path.join(sessionDir, file), () => { });
+        }
+    });
+}, 3 * 60 * 1000);
+// Temp folder setup
+const customTemp = path.join(process.cwd(), 'temp');
+if (!fs.existsSync(customTemp))
+    fs.mkdirSync(customTemp, { recursive: true });
+process.env.TMPDIR = customTemp;
+process.env.TEMP = customTemp;
+process.env.TMP = customTemp;
+// Temp folder cleanup
+setInterval(() => {
+    fs.readdir(customTemp, (err, files) => {
+        if (err)
+            return;
+        for (const file of files) {
+            const filePath = path.join(customTemp, file);
+            fs.stat(filePath, (err, stats) => {
+                if (!err && Date.now() - stats.mtimeMs > 3 * 60 * 60 * 1000) {
+                    fs.unlink(filePath, () => { });
+                }
+            });
+        }
+    });
+}, 1 * 60 * 60 * 1000);
+// Syntax check dist files
+const folders = [
+    path.join(__dirname, './lib'),
+    path.join(__dirname, './plugins')
+];
+folders.forEach(folder => {
+    if (!fs.existsSync(folder))
+        return;
+    fs.readdirSync(folder)
+        .filter(file => file.endsWith('.js'))
+        .forEach(file => {
+        const filePath = path.join(folder, file);
+        try {
+            const code = fs.readFileSync(filePath, 'utf-8');
+            const err = syntaxerror(code, file, {
+                sourceType: 'module',
+                allowAwaitOutsideFunction: true
+            });
+            if (err) {
+                console.error(chalk.red(`❌ Syntax error in ${filePath}:\n${err}`));
+            }
+        }
+        catch (e) {
+            console.error(chalk.yellow(`⚠️ Cannot read file ${filePath}:\n${e}`));
+        }
     });
 });
-
-app.get('/api/history/:jid', (req, res) => {
-    const { jid } = req.params;
-
-    if (aiHandler) {
-        const history = aiHandler.getConversationHistory(jid);
-        res.json({ history });
-    } else {
-        res.status(503).json({ message: 'IA non disponible' });
+// Error handlers
+process.on('uncaughtException', (err) => {
+    printLog('error', `Uncaught Exception: ${err.message}`);
+    console.error(err.stack);
+    writeErrorLog({
+        type: 'uncaughtException',
+        error: err.message,
+        stack: err.stack,
+        timestamp: new Date().toISOString()
+    });
+});
+process.on('unhandledRejection', (err) => {
+    printLog('error', `Unhandled Rejection: ${err.message}`);
+    console.error(err.stack);
+    writeErrorLog({
+        type: 'unhandledRejection',
+        error: err.message,
+        stack: err.stack,
+        timestamp: new Date().toISOString()
+    });
+});
+server.on('error', (error) => {
+    if (error.code === 'EADDRINUSE') {
+        printLog('error', `Address localhost:${PORT} in use`);
+        writeErrorLog({
+            type: 'serverError',
+            error: `Address localhost:${PORT} in use`,
+            timestamp: new Date().toISOString()
+        });
+        server.close();
     }
-});
-
-// ============================================
-// DÉMARRAGE SERVEUR
-// ============================================
-app.listen(PORT, () => {
-    log.info(`🌐 Serveur Express lancé sur le port ${PORT}`);
-    log.info(`📱 Accédez à l'interface web: http://localhost:${PORT}`);
-});
-
-// Démarrer le bot
-start().catch((error) => {
-    log.error('❌ Erreur critique:', error);
-    process.exit(1);
-});
-
-// ============================================
-// GESTION DE L'ARRÊT
-// ============================================
-process.on('SIGINT', async () => {
-    log.info('⛔ Arrêt du bot...');
-    if (databaseManager) {
-        await databaseManager.close();
+    else {
+        printLog('error', `Server error: ${error.message}`);
+        writeErrorLog({
+            type: 'serverError',
+            error: error.message,
+            stack: error.stack,
+            timestamp: new Date().toISOString()
+        });
     }
-    timerManager.clearAll();
-    process.exit(0);
 });
