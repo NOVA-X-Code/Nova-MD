@@ -80,9 +80,13 @@ async function start() {
         const { state, saveCreds } = await useMultiFileAuthState(authManager.sessionPath);
 
         // Configuration du socket
-        const sock = makeWASocket({
+        sock = makeWASocket({
             auth: state,
             printQRInTerminal: true,
+            browser: ['Ubuntu', 'Chrome', '22.04'],
+            syncFullHistory: false,
+            maxMsgsInMemory: 100,
+            shouldIgnoreJid: (jid) => !jid.endsWith('@s.whatsapp.net') && !jid.endsWith('@g.us'),
         });
 
         // ============================================
@@ -90,32 +94,57 @@ async function start() {
         // ============================================
         sock.ev.on('creds.update', saveCreds);
 
+        let reconnectCount = 0;
+        const maxReconnectAttempts = 5;
+
         sock.ev.on('connection.update', async (update) => {
-            const { connection, lastDisconnect, qr } = update;
+            const { connection, lastDisconnect, qr, isOnline } = update;
 
             if (qr) {
                 // Générer le QR code
                 log.info('📱 QR Code reçu');
                 qrCodeUrl = await QRCode.toDataURL(qr);
+                reconnectCount = 0;
+            }
+
+            if (isOnline === true) {
+                log.info('🌐 En ligne');
+            }
+
+            if (isOnline === false) {
+                log.warn('🌐 Hors ligne');
             }
 
             if (connection === 'open') {
                 isConnected = true;
+                reconnectCount = 0;
                 log.info('✅ WhatsApp connecté avec succès');
-                log.info(`📞 Numéro: ${sock.user.id}`);
+                log.info(`📞 Numéro: ${sock.user?.id || 'Unknown'}`);
             }
 
             if (connection === 'close') {
                 isConnected = false;
-                const reason = lastDisconnect?.error?.output?.statusCode || 'Déconnexion';
-                log.warn(`⚠️  Déconnecté: ${reason}`);
+                const reason = lastDisconnect?.error?.output?.statusCode;
+                log.warn(`⚠️  Déconnecté: ${reason || 'Connexion fermée'}`);
 
                 if (reason === DisconnectReason.loggedOut) {
-                    log.warn('🔄 Reconnexion requise...');
-                } else {
-                    // Reconnecter automatiquement
-                    setTimeout(start, 3000);
+                    log.warn('🔄 Session expirée - reconnexion requise');
+                    process.exit(0);
+                } else if (reason === DisconnectReason.connectionClosed) {
+                    log.warn('🔄 Connexion fermée - reconnexion...');
+                } else if (reason === 405) {
+                    log.warn('🔄 Stream resumé - reconnexion intelligente...');
+                    reconnectCount++;
+                    if (reconnectCount > maxReconnectAttempts) {
+                        log.error('❌ Trop de reconnexions - arrêt');
+                        process.exit(1);
+                    }
                 }
+
+                // Reconnecter automatiquement avec délai exponentiel
+                const delay = Math.min(1000 * Math.pow(2, reconnectCount), 30000);
+                log.info(`⏳ Nouvelle tentative dans ${delay}ms...`);
+                setTimeout(start, delay);
             }
         });
 
@@ -350,6 +379,8 @@ async function handleCommand(messageContent, msg, sender, remoteJid) {
 // ROUTES EXPRESS
 // ============================================
 app.get('/api/qr-code', (req, res) => {
+    log.info(`📋 Demande QR code - isConnected: ${isConnected}, qrCodeUrl: ${!!qrCodeUrl}`);
+    
     if (isConnected) {
         res.json({ status: 'connected' });
     } else if (qrCodeUrl) {
@@ -371,16 +402,26 @@ app.post('/api/pairing-code', async (req, res) => {
         const formattedNumber = phoneNumber.replace(/[^0-9]/g, '');
 
         if (!sock) {
+            log.error('❌ Socket non disponible pour pairing code');
             return res.status(503).json({ message: 'Socket non disponible' });
         }
 
+        if (!sock.requestPairingCode) {
+            log.error('❌ Méthode requestPairingCode non disponible');
+            return res.status(503).json({ message: 'Pairing code non supporté dans cette version' });
+        }
+
+        log.info(`🔑 Demande pairing code pour: ${formattedNumber}`);
+
         // Générer le pairing code
         const code = await sock.requestPairingCode(formattedNumber);
+        
+        log.info(`✅ Pairing code généré: ${code}`);
 
         res.json({ code: code });
     } catch (error) {
-        log.error('❌ Erreur pairing code:', error);
-        res.status(500).json({ message: 'Erreur lors de la génération du pairing code' });
+        log.error('❌ Erreur pairing code:', error.message);
+        res.status(500).json({ message: 'Erreur lors de la génération du pairing code: ' + error.message });
     }
 });
 
