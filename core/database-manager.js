@@ -33,10 +33,19 @@ class DatabaseManager {
                     message_content TEXT,
                     media_type VARCHAR(50),
                     timestamp BIGINT NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    INDEX idx_sender (sender_number),
-                    INDEX idx_timestamp (timestamp)
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
+            `);
+
+            // Créer les index
+            await client.query(`
+                CREATE INDEX IF NOT EXISTS idx_sender 
+                ON deleted_messages (sender_number);
+            `);
+
+            await client.query(`
+                CREATE INDEX IF NOT EXISTS idx_timestamp 
+                ON deleted_messages (timestamp);
             `);
 
             log.info('✅ Tables PostgreSQL créées/vérifiées');
