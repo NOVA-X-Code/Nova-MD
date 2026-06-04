@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import { makeWASocket, useMultiFileAuthState, DisconnectReason, isJidGroup } from '@whiskeysockets/baileys';
 import QRCode from 'qrcode';
 import axios from 'axios';
+import pino from 'pino';
 import { createLogger } from './utils/logger.js';
 import AuthManager from './utils/auth-manager.js';
 import DatabaseManager from './core/database-manager.js';
@@ -58,6 +59,23 @@ async function start() {
 
         // Initialiser l'authentification
         await authManager.initializeSessionDir();
+        
+        // Vérifier si une session existante est corrompue
+        const sessionExists = await authManager.sessionExists();
+        if (sessionExists) {
+            log.info('🔍 Vérification session existante...');
+            // Essayer de charger - si ça échoue, nettoyer
+            try {
+                const existingAuth = await authManager.loadAuthState();
+                if (!existingAuth || !existingAuth.creds) {
+                    log.warn('⚠️  Session corrompue détectée - nettoyage...');
+                    await authManager.clearAuthState();
+                }
+            } catch (err) {
+                log.warn('⚠️  Impossible de charger session - nettoyage...');
+                await authManager.clearAuthState();
+            }
+        }
 
         // Initialiser la base de données
         if (process.env.DATABASE_URL) {
@@ -85,12 +103,20 @@ async function start() {
         sock = makeWASocket({
             auth: state,
             printQRInTerminal: true,
+            logger: pino({ level: 'error' }),
             browser: ['Ubuntu', 'Chrome', '22.04'],
+            mobile: false,
+            markOnlineOnConnect: false,
+            emitOwnEvents: true,
+            connectTimeoutMs: 240000,
+            defaultQueryTimeoutMs: 180000,
             syncFullHistory: false,
-            maxMsgsInMemory: 100,
+            retryRequestDelayMs: 5000,
+            maxRetries: 3, 
+            keepAliveIntervalMs: 60000,
+            getMessage: async () => undefined,
+            shouldSyncHistoryMessage: () => false,
             shouldIgnoreJid: (jid) => !jid.endsWith('@s.whatsapp.net') && !jid.endsWith('@g.us'),
-            retryRequestDelayMs: 10,
-            logLevel: 'error',
         });
 
         // Timeout pour détecter les connexions qui traînent
@@ -421,11 +447,23 @@ app.get('/api/qr-code', (req, res) => {
     log.info(`📋 Demande QR code - isConnected: ${isConnected}, qrCodeUrl: ${!!qrCodeUrl}`);
     
     if (isConnected) {
-        res.json({ status: 'connected' });
+        res.json({ 
+            success: true,
+            status: 'connected',
+            message: 'Bot connecté avec succès'
+        });
     } else if (qrCodeUrl) {
-        res.json({ qr: qrCodeUrl });
+        res.json({ 
+            success: true,
+            qr: qrCodeUrl,
+            message: 'QR code prêt à scanner'
+        });
     } else {
-        res.json({ message: 'En attente du QR code...' });
+        res.status(202).json({ 
+            success: false,
+            message: 'QR code en attente de génération',
+            hint: 'Le serveur initialise la connexion WhatsApp. Patientez...'
+        });
     }
 });
 
@@ -434,33 +472,75 @@ app.post('/api/pairing-code', async (req, res) => {
         const { phoneNumber } = req.body;
 
         if (!phoneNumber) {
-            return res.status(400).json({ message: 'Numéro de téléphone requis' });
+            return res.status(400).json({ success: false, message: 'Numéro de téléphone requis' });
         }
 
-        // Formater le numéro
+        // Formater le numéro (supprimer tous les caractères non-numériques)
         const formattedNumber = phoneNumber.replace(/[^0-9]/g, '');
+
+        if (!formattedNumber || formattedNumber.length < 10) {
+            return res.status(400).json({ success: false, message: 'Numéro de téléphone invalide' });
+        }
 
         if (!sock) {
             log.error('❌ Socket non disponible pour pairing code');
-            return res.status(503).json({ message: 'Socket non disponible' });
+            return res.status(503).json({ success: false, message: 'Serveur non prêt - reconnexion en cours' });
         }
 
-        if (!sock.requestPairingCode) {
+        if (!sock.requestPairingCode || typeof sock.requestPairingCode !== 'function') {
             log.error('❌ Méthode requestPairingCode non disponible');
-            return res.status(503).json({ message: 'Pairing code non supporté dans cette version' });
+            return res.status(503).json({ success: false, message: 'Pairing code non supporté' });
         }
 
         log.info(`🔑 Demande pairing code pour: ${formattedNumber}`);
 
-        // Générer le pairing code
-        const code = await sock.requestPairingCode(formattedNumber);
-        
-        log.info(`✅ Pairing code généré: ${code}`);
+        // Générer le pairing code avec timeout de 30s
+        const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Timeout génération pairing code')), 30000)
+        );
 
-        res.json({ code: code });
+        let code;
+        try {
+            code = await Promise.race([
+                sock.requestPairingCode(formattedNumber),
+                timeoutPromise
+            ]);
+        } catch (err) {
+            if (err.message.includes('Timeout')) {
+                return res.status(408).json({ success: false, message: 'Timeout: serveur non réactif' });
+            }
+            throw err;
+        }
+
+        if (!code) {
+            return res.status(500).json({ success: false, message: 'Aucun code généré par le serveur' });
+        }
+
+        // Formater le code (ajouter des tirets tous les 4 caractères)
+        const formattedCode = code.toString().replace(/(.{4})/g, '$1-').replace(/-$/, '');
+        
+        log.success(`✅ Pairing code généré: ${formattedCode}`);
+
+        res.json({ 
+            success: true,
+            code: formattedCode,
+            phoneNumber: formattedNumber,
+            expiresIn: '5 minutes'
+        });
     } catch (error) {
         log.error('❌ Erreur pairing code:', error.message);
-        res.status(500).json({ message: 'Erreur lors de la génération du pairing code: ' + error.message });
+        
+        // Meilleur messages d'erreur selon le type
+        let message = 'Erreur lors de la génération du pairing code';
+        if (error.message.includes('too many')) {
+            message = 'Trop de tentatives - attendez 10 minutes';
+        } else if (error.message.includes('invalid')) {
+            message = 'Numéro de téléphone invalide';
+        } else if (error.message.includes('network')) {
+            message = 'Erreur réseau - vérifiez votre connexion';
+        }
+        
+        res.status(500).json({ success: false, message });
     }
 });
 
