@@ -77,10 +77,13 @@ async function start() {
             }
         }
 
-        // Initialiser la base de données
+        // Initialiser la base de données (non-blocking)
         if (process.env.DATABASE_URL) {
             databaseManager = new DatabaseManager(process.env.DATABASE_URL);
-            await databaseManager.initialize();
+            // Don't await - let it initialize in background to not block WhatsApp socket
+            databaseManager.initialize().catch(err => {
+                log.warn('⚠️  Erreur initialisation DB:', err.message);
+            });
         } else {
             log.warn('⚠️  DATABASE_URL non défini - fonctionnalité de messages supprimés désactivée');
         }
