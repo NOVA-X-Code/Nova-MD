@@ -46,6 +46,8 @@ let databaseManager = null;
 let aiHandler = null;
 let timerManager = new TimerManager(AI_RESPONSE_DELAY);
 let commandExecutor = null;
+let connectionErrorCount = 0;
+const MAX_CONSECUTIVE_ERRORS = 3;
 
 // ============================================
 // DÉMARRAGE
@@ -87,7 +89,19 @@ async function start() {
             syncFullHistory: false,
             maxMsgsInMemory: 100,
             shouldIgnoreJid: (jid) => !jid.endsWith('@s.whatsapp.net') && !jid.endsWith('@g.us'),
+            retryRequestDelayMs: 10,
+            logLevel: 'error',
         });
+
+        // Timeout pour détecter les connexions qui traînent
+        const connectionTimeout = setTimeout(async () => {
+            if (!isConnected && !qrCodeUrl) {
+                log.error('❌ Timeout: Pas de QR code généré après 10s');
+                qrCodeUrl = null;
+                await authManager.clearAuthState();
+                setTimeout(start, 3000);
+            }
+        }, 10000);
 
         // ============================================
         // ÉVÉNEMENTS SOCKET
@@ -103,7 +117,9 @@ async function start() {
             if (qr) {
                 // Générer le QR code
                 log.info('📱 QR Code reçu');
+                clearTimeout(connectionTimeout);
                 qrCodeUrl = await QRCode.toDataURL(qr);
+                connectionErrorCount = 0;
                 reconnectCount = 0;
             }
 
@@ -118,6 +134,8 @@ async function start() {
             if (connection === 'open') {
                 isConnected = true;
                 reconnectCount = 0;
+                connectionErrorCount = 0;
+                clearTimeout(connectionTimeout);
                 log.info('✅ WhatsApp connecté avec succès');
                 log.info(`📞 Numéro: ${sock.user?.id || 'Unknown'}`);
             }
@@ -127,24 +145,45 @@ async function start() {
                 const reason = lastDisconnect?.error?.output?.statusCode;
                 log.warn(`⚠️  Déconnecté: ${reason || 'Connexion fermée'}`);
 
-                if (reason === DisconnectReason.loggedOut) {
+                // Gérer les erreurs 405 (session expirée)
+                if (reason === 405) {
+                    connectionErrorCount++;
+                    log.warn(`🔄 Stream resumé (${connectionErrorCount}/${MAX_CONSECUTIVE_ERRORS})`);
+
+                    if (connectionErrorCount >= MAX_CONSECUTIVE_ERRORS) {
+                        log.error('❌ Session invalide - nettoyage et nouvelle connexion');
+                        qrCodeUrl = null;
+                        connectionErrorCount = 0;
+                        reconnectCount = 0;
+
+                        // Nettoyer la session expirée
+                        await authManager.clearAuthState();
+                        log.info('🧹 Session nettoyée');
+
+                        // Relancer avec délai long
+                        const delay = 5000;
+                        log.info(`⏳ Nouvelle tentative dans ${delay}ms...`);
+                        setTimeout(start, delay);
+                        return;
+                    }
+                } else if (reason === DisconnectReason.loggedOut) {
                     log.warn('🔄 Session expirée - reconnexion requise');
+                    connectionErrorCount = 0;
+                    qrCodeUrl = null;
+                    await authManager.clearAuthState();
                     process.exit(0);
                 } else if (reason === DisconnectReason.connectionClosed) {
                     log.warn('🔄 Connexion fermée - reconnexion...');
-                } else if (reason === 405) {
-                    log.warn('🔄 Stream resumé - reconnexion intelligente...');
-                    reconnectCount++;
-                    if (reconnectCount > maxReconnectAttempts) {
-                        log.error('❌ Trop de reconnexions - arrêt');
-                        process.exit(1);
-                    }
+                    connectionErrorCount = 0;
+                } else {
+                    connectionErrorCount++;
                 }
 
                 // Reconnecter automatiquement avec délai exponentiel
                 const delay = Math.min(1000 * Math.pow(2, reconnectCount), 30000);
                 log.info(`⏳ Nouvelle tentative dans ${delay}ms...`);
                 setTimeout(start, delay);
+                reconnectCount++;
             }
         });
 
