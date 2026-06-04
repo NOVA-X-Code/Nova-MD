@@ -6,21 +6,32 @@ const log = createLogger(import.meta.url);
 
 class DatabaseManager {
     constructor(connectionString) {
-        this.pool = new Pool({
-            connectionString: connectionString || process.env.DATABASE_URL,
-            ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-            max: 20,
-            idleTimeoutMillis: 30000,
-            connectionTimeoutMillis: 2000,
-        });
-
-        this.pool.on('error', (err) => {
-            log.error('Erreur pool PostgreSQL:', err);
-        });
+        this.connectionString = connectionString || process.env.DATABASE_URL;
+        this.pool = null;
+        this.isInitialized = false;
     }
 
     async initialize() {
         try {
+            // Si déjà initialisée, skip
+            if (this.isInitialized && this.pool) {
+                log.info('ℹ️  Base données déjà initialisée');
+                return;
+            }
+
+            // Créer la pool
+            this.pool = new Pool({
+                connectionString: this.connectionString,
+                ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+                max: 20,
+                idleTimeoutMillis: 30000,
+                connectionTimeoutMillis: 2000,
+            });
+
+            this.pool.on('error', (err) => {
+                log.error('Erreur pool PostgreSQL:', err);
+            });
+
             const client = await this.pool.connect();
             log.info('✅ Connexion PostgreSQL établie');
 
@@ -50,9 +61,11 @@ class DatabaseManager {
 
             log.info('✅ Tables PostgreSQL créées/vérifiées');
             client.release();
+            this.isInitialized = true;
         } catch (error) {
-            log.error('❌ Erreur initialisation base de données:', error);
-            throw error;
+            log.error('❌ Erreur initialisation base de données:', error.message);
+            this.isInitialized = false;
+            // Don't throw - just log and continue
         }
     }
 
@@ -60,6 +73,10 @@ class DatabaseManager {
      * Enregistrer un message supprimé
      */
     async saveDeletedMessage(messageId, senderNumber, content, mediaType = null, timestamp) {
+        if (!this.isInitialized || !this.pool) {
+            log.warn('⚠️  Base de données non disponible - message non sauvegardé');
+            return;
+        }
         try {
             await this.pool.query(
                 `INSERT INTO deleted_messages (message_id, sender_number, message_content, media_type, timestamp)
@@ -77,6 +94,10 @@ class DatabaseManager {
      * Récupérer tous les messages supprimés
      */
     async getDeletedMessages() {
+        if (!this.isInitialized || !this.pool) {
+            log.warn('⚠️  Base de données non disponible');
+            return [];
+        }
         try {
             const result = await this.pool.query(
                 `SELECT * FROM deleted_messages ORDER BY timestamp DESC;`
@@ -92,6 +113,10 @@ class DatabaseManager {
      * Supprimer tous les messages supprimés (après les avoir envoyés au propriétaire)
      */
     async clearDeletedMessages() {
+        if (!this.isInitialized || !this.pool) {
+            log.warn('⚠️  Base de données non disponible');
+            return 0;
+        }
         try {
             const result = await this.pool.query(
                 `DELETE FROM deleted_messages;`
