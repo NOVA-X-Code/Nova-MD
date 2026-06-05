@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NOVA-MD - WhatsApp Bot Setup</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --bg: #050508;
+            --surface: rgba(255,255,255,0.03);
+            --border: rgba(255,255,255,0.07);
+            --neon: #00ff88;
+            --neon2: #00cfff;
+            --text: #e8eaf0;
+            --muted: rgba(232,234,240,0.4);
+            --error: #ff4757;
+            --success: #00ff88;
+        }
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Syne', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+        .orb {
+            position: fixed;
+            border-radius: 50%;
+            filter: blur(120px);
+            pointer-events: none;
+            z-index: 0;
+        }
+        .orb-1 {
+            width: 600px; height: 600px;
+            background: radial-gradient(circle, rgba(0,255,136,0.1), transparent 70%);
+            top: -200px; left: -200px;
+            animation: drift1 18s ease-in-out infinite alternate;
+        }
+        .orb-2 {
+            width: 500px; height: 500px;
+            background: radial-gradient(circle, rgba(0,207,255,0.09), transparent 70%);
+            bottom: -150px; right: -150px;
+            animation: drift2 22s ease-in-out infinite alternate;
+        }
+        @keyframes drift1 { to { transform: translate(100px, 80px); } }
+        @keyframes drift2 { to { transform: translate(-80px, -100px); } }
+        .wrapper {
+            position: relative;
+            z-index: 2;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: clamp(48px, 8vh, 80px) clamp(16px, 4vw, 32px);
+            width: 100%;
+            max-width: 720px;
+        }
+        .badge {
+            font-family: 'DM Mono', monospace;
+            font-size: 11px;
+            letter-spacing: 2px;
+            color: var(--neon);
+            text-transform: uppercase;
+            margin-bottom: 12px;
+            opacity: 0.8;
+        }
+        h1 {
+            font-size: clamp(2rem, 8vw, 3.5rem);
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--neon) 0%, var(--neon2) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            line-height: 1.2;
+            margin-bottom: 12px;
+            letter-spacing: -1px;
+        }
+        .subtitle {
+            font-size: clamp(0.9rem, 3vw, 1.1rem);
+            color: var(--muted);
+            margin-bottom: 36px;
+            text-align: center;
+            max-width: 500px;
+        }
+        .method-selector {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 32px;
+            background: var(--surface);
+            padding: 8px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            width: 100%;
+            max-width: 400px;
+        }
+        .method-btn {
+            flex: 1;
+            padding: 12px 16px;
+            border: none;
+            background: transparent;
+            color: var(--muted);
+            font-family: 'Syne', sans-serif;
+            font-weight: 600;
+            cursor: pointer;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+            font-size: 0.95rem;
+        }
+        .method-btn.active {
+            background: linear-gradient(135deg, var(--neon) 0%, var(--neon2) 100%);
+            color: var(--bg);
+        }
+        .method-frame {
+            width: 100%;
+            min-height: 500px;
+            border: none;
+            background: transparent;
+        }
+    </style>
+</head>
+<body>
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="wrapper">
+        <div class="badge">⚡ NOVA-MD Setup</div>
+        <h1>Connect WhatsApp</h1>
+        <p class="subtitle">Choose your connection method</p>
+        
+        <div class="method-selector">
+            <button class="method-btn active" onclick="switchMethod('qr')">📱 QR Code</button>
+            <button class="method-btn" onclick="switchMethod('pair')">🔢 Pairing Code</button>
+        </div>
+        
+        <iframe id="methodFrame" class="method-frame" src="/api/pairing/view/qr"></iframe>
+    </div>
+
+    <script>
+        function switchMethod(method) {
+            // Update buttons
+            document.querySelectorAll('.method-btn').forEach(btn => btn.classList.remove('active'));
+            if (method === 'qr') {
+                document.querySelector('.method-btn:first-child').classList.add('active');
+                document.getElementById('methodFrame').src = '/api/pairing/view/qr';
+            } else {
+                document.querySelector('.method-btn:last-child').classList.add('active');
+                document.getElementById('methodFrame').src = '/api/pairing/view/pair';
+            }
+        }
+        
+        // Check for session completion periodically
+        let sessionCheckInterval = setInterval(async () => {
+            try {
+                const response = await fetch('/api/pairing/session/status');
+                const data = await response.json();
+                if (data.hasSession) {
+                    clearInterval(sessionCheckInterval);
+                    alert('✅ Session connected! The bot will restart...');
+                    setTimeout(() => location.reload(), 2000);
+                }
+            } catch (err) {
+                console.error('Error checking session:', err);
+            }
+        }, 5000);
+    </script>
+</body>
+</html>
