@@ -4,8 +4,8 @@ const config = {
     // Bot Identity
     botName: process.env.BOT_NAME || 'NOVA-MD',
     botOwner: process.env.BOT_OWNER || 'Nostra',
-    ownerNumber: process.env.OWNER_NUMBER || '923051391007',
-    author: process.env.AUTHOR || 'GlobalTechInfo',
+    ownerNumber: process.env.OWNER_NUMBER || '237676250509',
+    author: process.env.AUTHOR || 'NOSTRA',
     packname: process.env.PACKNAME || 'NOVA-MD',
     description: process.env.DESCRIPTION || 'High performance multi-device WhatsApp bot',
     version: '6.0.0',
@@ -13,7 +13,7 @@ const config = {
     prefixes: _prefixes,
     prefix: _prefixes[0],
     commandMode: process.env.COMMAND_MODE || 'public',
-    timeZone: process.env.TIMEZONE || 'Asia/Karachi',
+    timeZone: process.env.TIMEZONE || 'Africa/Douala',
     // Links
     channelLink: process.env.CHANNEL_LINK || 'https://whatsapp.com/channel/0029VagJIAr3bbVBCpEkAM07',
     updateZipUrl: process.env.UPDATE_URL || 'https://github.com/NOVA-X-Code/Nova-MD/archive/refs/heads/main.zip',
