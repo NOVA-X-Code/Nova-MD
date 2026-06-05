@@ -83,7 +83,7 @@ catch {
 global.botname = config.botName || "NOVA-MD";
 global.themeemoji = "•";
 
-// Ne plus utiliser pairingCode manuel - tout se fait via l'interface web
+// Désactiver le pairing via terminal - tout passe par l'interface web
 const pairingCode = false;
 const useMobile = process.argv.includes("--mobile");
 
@@ -162,8 +162,6 @@ function hasValidSession() {
         return false;
     }
 }
-
-// Supprimer initializeSession car on n'utilise plus de SESSION_ID manuel
 
 server.listen(PORT, () => {
     printLog('success', `Server listening on port ${PORT}`);
@@ -357,7 +355,7 @@ async function startNovaXCode() {
         
         const isRegistered = state.creds?.registered === true;
         
-        // Ne plus générer de pairing code automatiquement - tout se fait via l'interface web
+        // Plus de génération automatique de pairing code
         if (isRegistered) {
             if (rl && !rlClosed) {
                 rl.close();
