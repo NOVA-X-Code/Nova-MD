@@ -23,14 +23,17 @@ import { printLog } from './lib/print.js';
 import { writeErrorLog } from './lib/logger.js';
 import { handleMessages, handleGroupParticipantUpdate, handleStatus, handleCall } from './lib/messageHandler.js';
 import commandHandler from './lib/commandHandler.js';
+
 store.readFromFile();
 setInterval(() => store.writeToFile(), config.storeWriteInterval || 10000);
+
 setInterval(() => {
     if (global.gc) {
         global.gc();
         console.log('🧹 Garbage collection completed');
     }
 }, 60000);
+
 setInterval(() => {
     const used = process.memoryUsage().rss / 1024 / 1024;
     if (used > 400) {
@@ -38,7 +41,7 @@ setInterval(() => {
         process.exit(1);
     }
 }, 30000);
-const phoneNumber = config.pairingNumber || config.ownerNumber || "923051391005";
+
 // Auto-create data directory and default files on startup
 const DATA_DEFAULTS = {
     'owner.json': [],
@@ -61,12 +64,14 @@ const DATA_DEFAULTS = {
     'antilink.json': {},
     'antibadword.json': {},
 };
+
 fs.mkdirSync('./data', { recursive: true });
 for (const [file, def] of Object.entries(DATA_DEFAULTS)) {
     const fp = `./data/${file}`;
     if (!fs.existsSync(fp))
         fs.writeFileSync(fp, JSON.stringify(def, null, 2));
 }
+
 let owner = [];
 try {
     owner = JSON.parse(fs.readFileSync('./data/owner.json', 'utf-8'));
@@ -74,10 +79,14 @@ try {
 catch {
     owner = [];
 }
+
 global.botname = config.botName || "NOVA-MD";
 global.themeemoji = "•";
-const pairingCode = !process.argv.includes("--qr-code");
+
+// Ne plus utiliser pairingCode manuel - tout se fait via l'interface web
+const pairingCode = false;
 const useMobile = process.argv.includes("--mobile");
+
 let rl = null;
 let rlClosed = false;
 if (process.stdin.isTTY && !config.pairingNumber) {
@@ -87,23 +96,27 @@ if (process.stdin.isTTY && !config.pairingNumber) {
     });
     rl.on('close', () => { rlClosed = true; });
 }
+
 const question = (text) => {
     if (rl && !rlClosed) {
         return new Promise((resolve) => rl.question(text, resolve));
     }
     else {
-        return Promise.resolve(config.ownerNumber || phoneNumber);
+        return Promise.resolve(config.ownerNumber || "923051391005");
     }
 };
+
 process.on('exit', () => {
     if (rl && !rlClosed)
         rl.close();
 });
+
 process.on('SIGINT', () => {
     if (rl && !rlClosed)
         rl.close();
     process.exit(0);
 });
+
 function ensureSessionDirectory() {
     const sessionPath = path.join(__dirname, 'session');
     if (!existsSync(sessionPath)) {
@@ -111,6 +124,7 @@ function ensureSessionDirectory() {
     }
     return sessionPath;
 }
+
 function hasValidSession() {
     try {
         const credsPath = path.join(__dirname, 'session', 'creds.json');
@@ -148,52 +162,30 @@ function hasValidSession() {
         return false;
     }
 }
-async function initializeSession() {
-    ensureSessionDirectory();
-    const txt = config.sessionId;
-    if (!txt) {
-        if (hasValidSession()) {
-            printLog('success', 'Existing session found. Using saved credentials');
-            return true;
-        }
-        return false;
-    }
-    if (hasValidSession())
-        return true;
-    try {
-        await SaveCreds(txt);
-        await delay(2000);
-        if (hasValidSession()) {
-            printLog('success', 'Session file verified and valid');
-            await delay(1000);
-            return true;
-        }
-        else {
-            printLog('error', 'Session file not valid after download');
-            return false;
-        }
-    }
-    catch (error) {
-        printLog('error', `Error downloading session: ${error.message}`);
-        return false;
-    }
-}
+
+// Supprimer initializeSession car on n'utilise plus de SESSION_ID manuel
+
 server.listen(PORT, () => {
     printLog('success', `Server listening on port ${PORT}`);
+    printLog('info', `🌐 Web interface available at: http://localhost:${PORT}/pairing`);
 });
+
 async function startNovaXCode() {
     try {
         const { version } = await fetchLatestBaileysVersion();
         ensureSessionDirectory();
         await delay(1000);
+        
         const { state, saveCreds } = await useMultiFileAuthState(`./session`);
         const _saveCreds = async () => {
             ensureSessionDirectory();
             await saveCreds();
         };
+        
         const msgRetryCounterCache = new NodeCache();
         const ghostMode = await store.getSetting('global', 'stealthMode');
         const isGhostActive = ghostMode && ghostMode.enabled;
+        
         const NovaXCode = makeWASocket({
             version,
             logger: pino({ level: 'silent' }),
@@ -215,10 +207,13 @@ async function startNovaXCode() {
             connectTimeoutMs: 60000,
             keepAliveIntervalMs: 10000,
         });
+        
         NovaXCode.store = store;
+        
         const originalSendPresenceUpdate = NovaXCode.sendPresenceUpdate;
         const originalReadMessages = NovaXCode.readMessages;
         const originalSendReceipt = NovaXCode.sendReceipt;
+        
         NovaXCode.sendPresenceUpdate = async function (...args) {
             const ghostMode = await store.getSetting('global', 'stealthMode');
             if (ghostMode && ghostMode.enabled) {
@@ -227,12 +222,14 @@ async function startNovaXCode() {
             }
             return originalSendPresenceUpdate.apply(this, args);
         };
+        
         NovaXCode.readMessages = async function (...args) {
             const ghostMode = await store.getSetting('global', 'stealthMode');
             if (ghostMode && ghostMode.enabled)
                 return;
             return originalReadMessages.apply(this, args);
         };
+        
         if (originalSendReceipt) {
             NovaXCode.sendReceipt = async function (...args) {
                 const ghostMode = await store.getSetting('global', 'stealthMode');
@@ -241,6 +238,7 @@ async function startNovaXCode() {
                 return originalSendReceipt.apply(this, args);
             };
         }
+        
         const originalQuery = NovaXCode.query;
         NovaXCode.query = async function (node, ...args) {
             const ghostMode = await store.getSetting('global', 'stealthMode');
@@ -252,12 +250,15 @@ async function startNovaXCode() {
             }
             return originalQuery.apply(this, [node, ...args]);
         };
+        
         NovaXCode.isGhostMode = async () => {
             const ghostMode = await store.getSetting('global', 'stealthMode');
             return ghostMode && ghostMode.enabled;
         };
+        
         NovaXCode.ev.on('creds.update', _saveCreds);
         store.bind(NovaXCode.ev);
+        
         NovaXCode.ev.on('messages.upsert', async (chatUpdate) => {
             try {
                 const mek = chatUpdate.messages[0];
@@ -266,20 +267,25 @@ async function startNovaXCode() {
                 mek.message = (Object.keys(mek.message)[0] === 'ephemeralMessage')
                     ? mek.message.ephemeralMessage.message
                     : mek.message;
+                    
                 if (mek.key && mek.key.remoteJid === 'status@broadcast') {
                     await handleStatus(NovaXCode, chatUpdate);
                     return;
                 }
+                
                 if (!NovaXCode.public && !mek.key.fromMe && chatUpdate.type === 'notify') {
                     const isGroup = mek.key?.remoteJid?.endsWith('@g.us');
                     if (!isGroup)
                         return;
                 }
+                
                 if (mek.key.id.startsWith('BAE5') && mek.key.id.length === 16)
                     return;
+                    
                 if (NovaXCode?.msgRetryCounterCache) {
                     NovaXCode.msgRetryCounterCache.clear();
                 }
+                
                 try {
                     await handleMessages(NovaXCode, chatUpdate);
                 }
@@ -305,16 +311,18 @@ async function startNovaXCode() {
                 printLog('error', `Error in messages.upsert: ${err.message}`);
             }
         });
+        
         NovaXCode.decodeJid = (jid) => {
             if (!jid)
                 return jid;
             if (/:\d+@/gi.test(jid)) {
                 const decode = jidDecode(jid) || {};
-                return decode.user && decode.server && `${decode.user }@${ decode.server}` || jid;
+                return decode.user && decode.server && `${decode.user}@${decode.server}` || jid;
             }
             else
                 return jid;
         };
+        
         NovaXCode.ev.on('contacts.update', (update) => {
             for (const contact of update) {
                 const id = NovaXCode.decodeJid(contact.id);
@@ -322,6 +330,7 @@ async function startNovaXCode() {
                     store.contacts[id] = { id, name: contact.notify };
             }
         });
+        
         NovaXCode.getName = (jid, withoutContact = false) => {
             const id = NovaXCode.decodeJid(jid);
             withoutContact = NovaXCode.withoutContact || withoutContact;
@@ -331,7 +340,7 @@ async function startNovaXCode() {
                     v = store.contacts[id] || {};
                     if (!(v.name || v.subject))
                         v = NovaXCode.groupMetadata(id) || {};
-                    resolve(v.name || v.subject || PhoneNumber(`+${ id.replace('@s.whatsapp.net', '')}`).number?.international);
+                    resolve(v.name || v.subject || PhoneNumber(`+${id.replace('@s.whatsapp.net', '')}`).number?.international);
                 });
             else
                 v = id === '0@s.whatsapp.net' ? {
@@ -340,88 +349,32 @@ async function startNovaXCode() {
                 } : id === NovaXCode.decodeJid(NovaXCode.user.id) ?
                     NovaXCode.user :
                     (store.contacts[id] || {});
-            return (withoutContact ? '' : v.name) || v.subject || v.verifiedName || PhoneNumber(`+${ jid.replace('@s.whatsapp.net', '')}`).number?.international;
+            return (withoutContact ? '' : v.name) || v.subject || v.verifiedName || PhoneNumber(`+${jid.replace('@s.whatsapp.net', '')}`).number?.international;
         };
+        
         NovaXCode.public = true;
         NovaXCode.serializeM = (m) => smsg(NovaXCode, m, store);
+        
         const isRegistered = state.creds?.registered === true;
-        if (pairingCode && !isRegistered) {
-            if (useMobile)
-                throw new Error('Cannot use pairing code with mobile api');
-            let phoneNumberInput;
-            if (config.pairingNumber) {
-                phoneNumberInput = config.pairingNumber;
-            }
-            else if (process.env.PAIRING_NUMBER) {
-                phoneNumberInput = process.env.PAIRING_NUMBER;
-            }
-            else if (rl && !rlClosed) {
-                phoneNumberInput = await question(chalk.bgBlack(chalk.greenBright(`Please type your WhatsApp number 😍\nFormat: 923001234567 (without + or spaces) : `)));
-            }
-            else {
-                phoneNumberInput = phoneNumber;
-                printLog('info', `Using default phone number: ${phoneNumberInput}`);
-            }
-            phoneNumberInput = phoneNumberInput.replace(/[^0-9]/g, '');
-            const pn = PhoneNumber(`+${ phoneNumberInput}`);
-            if (!pn.valid) {
-                printLog('error', 'Invalid phone number format');
-                if (rl && !rlClosed)
-                    rl.close();
-                process.exit(1);
-            }
-            const doPairing = async (num, attempt = 1) => {
-                try {
-                    let code = await NovaXCode.requestPairingCode(num);
-                    code = code?.match(/.{1,4}/g)?.join("-") || code;
-                    console.log(chalk.black(chalk.bgGreen(`Your Pairing Code : `)), chalk.black(chalk.white(code)));
-                    printLog('success', `Pairing code generated: ${code}`);
-                    if (rl && !rlClosed) {
-                        rl.close();
-                        rl = null;
-                    }
-                }
-                catch (error) {
-                    if (attempt < 3) {
-                        try {
-                            rmSync('./session', { recursive: true, force: true });
-                        }
-                        catch (_e) { /* ignore */ }
-                        await delay(3000);
-                        startNovaXCode();
-                    }
-                    else {
-                        printLog('error', 'All 3 pairing attempts failed. Please restart manually.');
-                    }
-                }
-            };
-            setTimeout(() => doPairing(phoneNumberInput), 3000);
-        }
-        else if (isRegistered) {
+        
+        // Ne plus générer de pairing code automatiquement - tout se fait via l'interface web
+        if (isRegistered) {
             if (rl && !rlClosed) {
                 rl.close();
                 rl = null;
             }
         }
         else {
-            printLog('warning', 'Waiting for connection to establish...');
+            printLog('info', '🔄 Waiting for connection to establish via web interface...');
             if (rl && !rlClosed) {
                 rl.close();
                 rl = null;
             }
         }
+        
         NovaXCode.ev.on('connection.update', async (s) => {
             const { connection, lastDisconnect, qr } = s;
-            if (qr) {
-                if (!pairingCode) {
-                    try {
-                        console.log(await QRCode.toString(qr, { type: 'terminal', small: true }));
-                    }
-                    catch (_e) {
-                        console.log('QR:', qr);
-                    }
-                }
-            }
+            
             if (connection === "open") {
                 printLog('success', 'Bot connected successfully!');
                 try {
@@ -433,16 +386,19 @@ async function startNovaXCode() {
                 catch (e) {
                     printLog('error', `Failed to start auto bio: ${e.message}`);
                 }
+                
                 const ghostMode = await store.getSetting('global', 'stealthMode');
                 if (ghostMode && ghostMode.enabled) {
                     printLog('info', '👻 STEALTH MODE ACTIVE');
                 }
-                printLog('success', `Connected to => ${ JSON.stringify(NovaXCode.user, null, 2)}`);
+                
+                printLog('success', `Connected to => ${JSON.stringify(NovaXCode.user, null, 2)}`);
+                
                 try {
-                    const botNumber = `${NovaXCode.user.id.split(':')[0] }@s.whatsapp.net`;
+                    const botNumber = `${NovaXCode.user.id.split(':')[0]}@s.whatsapp.net`;
                     const ghostStatus = (ghostMode && ghostMode.enabled) ? '\n👻 Stealth Mode: ACTIVE' : '';
                     await NovaXCode.sendMessage(botNumber, {
-                        text: `🤖 Bot Connected Successfully!\n\n⏰ Time: ${new Date().toLocaleString()}\n✅ Status: Online and Ready!${ghostStatus}\n\n✅Make sure to join below channel`,
+                        text: `🤖 Bot Connected Successfully!\n\n⏰ Time: ${new Date().toLocaleString()}\n✅ Status: Online and Ready!${ghostStatus}\n\n✅ Make sure to join below channel`,
                         contextInfo: {
                             forwardingScore: 1,
                             isForwarded: true,
@@ -457,11 +413,13 @@ async function startNovaXCode() {
                 catch (error) {
                     printLog('error', `Failed to send connection message: ${error.message}`);
                 }
+                
                 await delay(1999);
                 try {
                     owner = JSON.parse(fs.readFileSync('./data/owner.json', 'utf-8'));
                 }
                 catch (_e) { }
+                
                 printLog('info', `[ ${config.botName || 'NOVA-MD'} ]`);
                 printLog('info', `WA NUMBER  : ${owner[0] || config.ownerNumber || ''}`);
                 printLog('success', `Bot Connected Successfully!`);
@@ -470,9 +428,11 @@ async function startNovaXCode() {
                 printLog('store', `Backend    : ${store.getStats().backend}`);
                 console.log();
             }
+            
             if (connection === 'close') {
                 const statusCode = lastDisconnect?.error?.output?.statusCode;
                 const shouldReconnect = statusCode !== DisconnectReason.loggedOut && statusCode !== 401;
+                
                 if (statusCode === DisconnectReason.loggedOut || statusCode === 401) {
                     try {
                         rmSync('./session', { recursive: true, force: true });
@@ -482,6 +442,7 @@ async function startNovaXCode() {
                     startNovaXCode();
                     return;
                 }
+                
                 if (shouldReconnect) {
                     printLog('connection', 'Reconnecting in 5 seconds...');
                     await delay(5000);
@@ -489,18 +450,23 @@ async function startNovaXCode() {
                 }
             }
         });
+        
         NovaXCode.ev.on('call', async (calls) => {
             await handleCall(NovaXCode, calls);
         });
+        
         NovaXCode.ev.on('group-participants.update', async (update) => {
             await handleGroupParticipantUpdate(NovaXCode, update);
         });
+        
         NovaXCode.ev.on('status.update', async (status) => {
             await handleStatus(NovaXCode, status);
         });
+        
         NovaXCode.ev.on('messages.reaction', async (reaction) => {
             await handleStatus(NovaXCode, reaction);
         });
+        
         return NovaXCode;
     }
     catch (error) {
@@ -513,13 +479,15 @@ async function startNovaXCode() {
         startNovaXCode();
     }
 }
+
 async function waitForSessionCreation() {
     printLog('info', '🔄 Waiting for session to be created via web interface...');
     printLog('info', `📱 Open http://localhost:${config.port || 5000}/pairing in your browser`);
+    printLog('info', '📱 For Render deployment, click the Render URL and add /pairing at the end');
     
-    const maxWaitTime = 15 * 60 * 1000; // 15 minutes
+    const maxWaitTime = 30 * 60 * 1000; // 30 minutes
     const startTime = Date.now();
-    const checkInterval = 5000; // Check every 5 seconds
+    const checkInterval = 3000; // Check every 3 seconds
     
     return new Promise((resolve, reject) => {
         const checkLoop = setInterval(() => {
@@ -531,7 +499,7 @@ async function waitForSessionCreation() {
             
             if (Date.now() - startTime > maxWaitTime) {
                 clearInterval(checkLoop);
-                reject(new Error('Session creation timeout (15 minutes)'));
+                reject(new Error('Session creation timeout (30 minutes)'));
             }
         }, checkInterval);
     });
@@ -540,37 +508,49 @@ async function waitForSessionCreation() {
 async function main() {
     await compileAll();
     await commandHandler.loadCommands();
-    printLog('info', 'Starting MEGA MD BOT...');
+    printLog('info', 'Starting NOVA-MD BOT...');
     
-    // Check if we have a valid session
-    if (!hasValidSession()) {
-        printLog('warning', '⚠️ No valid session found');
-        
-        // Try to initialize from config
-        const initialized = await initializeSession();
-        if (!initialized) {
-            printLog('info', '🌐 Launching web pairing interface...');
-            try {
-                await waitForSessionCreation();
-            } catch (error) {
-                printLog('error', `Session creation failed: ${error.message}`);
-                if (rl && !rlClosed) rl.close();
-                process.exit(1);
-            }
-        }
+    // Vérifier si une session existe déjà
+    if (hasValidSession()) {
+        printLog('success', '✅ Valid session found, starting bot...');
+        await delay(3000);
+        startNovaXCode().catch((error) => {
+            printLog('error', `Fatal error: ${error.message}`);
+            if (rl && !rlClosed)
+                rl.close();
+            process.exit(1);
+        });
     } else {
-        printLog('success', '✅ Valid session found, skipping pairing');
+        printLog('info', '🌐 No session found. Launching web pairing interface...');
+        printLog('info', `📱 Open http://localhost:${config.port || 5000}/pairing in your browser to connect WhatsApp`);
+        printLog('info', '📱 For Render: https://votre-bot.onrender.com/pairing');
+        printLog('info', '');
+        printLog('info', 'Choose one of these methods:');
+        printLog('info', '   • QR Code: Scan with WhatsApp > Linked Devices');
+        printLog('info', '   • Pairing Code: Enter your phone number, get 8-digit code');
+        printLog('info', '');
+        
+        // Attendre la création de session via l'interface web
+        try {
+            await waitForSessionCreation();
+            printLog('success', '✅ Session detected! Starting bot...');
+            await delay(3000);
+            startNovaXCode().catch((error) => {
+                printLog('error', `Fatal error: ${error.message}`);
+                if (rl && !rlClosed)
+                    rl.close();
+                process.exit(1);
+            });
+        } catch (error) {
+            printLog('error', `Session creation failed: ${error.message}`);
+            if (rl && !rlClosed) rl.close();
+            process.exit(1);
+        }
     }
-    
-    await delay(3000);
-    startNovaXCode().catch((error) => {
-        printLog('error', `Fatal error: ${error.message}`);
-        if (rl && !rlClosed)
-            rl.close();
-        process.exit(1);
-    });
 }
+
 main();
+
 // Session cleanup interval
 const sessionDir = path.join(process.cwd(), 'session');
 setInterval(() => {
@@ -588,6 +568,7 @@ setInterval(() => {
         }
     });
 }, 3 * 60 * 1000);
+
 // Temp folder setup
 const customTemp = path.join(process.cwd(), 'temp');
 if (!fs.existsSync(customTemp))
@@ -595,6 +576,7 @@ if (!fs.existsSync(customTemp))
 process.env.TMPDIR = customTemp;
 process.env.TEMP = customTemp;
 process.env.TMP = customTemp;
+
 // Temp folder cleanup
 setInterval(() => {
     fs.readdir(customTemp, (err, files) => {
@@ -610,6 +592,7 @@ setInterval(() => {
         }
     });
 }, 1 * 60 * 60 * 1000);
+
 // Syntax check dist files
 const folders = [
     path.join(__dirname, './lib'),
@@ -637,6 +620,7 @@ folders.forEach(folder => {
         }
     });
 });
+
 // Error handlers
 process.on('uncaughtException', (err) => {
     printLog('error', `Uncaught Exception: ${err.message}`);
@@ -648,6 +632,7 @@ process.on('uncaughtException', (err) => {
         timestamp: new Date().toISOString()
     });
 });
+
 process.on('unhandledRejection', (err) => {
     printLog('error', `Unhandled Rejection: ${err.message}`);
     console.error(err.stack);
@@ -658,6 +643,7 @@ process.on('unhandledRejection', (err) => {
         timestamp: new Date().toISOString()
     });
 });
+
 server.on('error', (error) => {
     if (error.code === 'EADDRINUSE') {
         printLog('error', `Address localhost:${PORT} in use`);
