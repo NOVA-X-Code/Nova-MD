@@ -41,7 +41,7 @@ export default {
                 cmdReactEnabled = true;
             }
             const getSt = (val) => val ? '✅' : '❌';
-            let menuText = `╭━〔 *MEGA CONFIG* 〕━┈\n┃\n`;
+            let menuText = `╭━〔 *NOVA CONFIG* 〕━┈\n┃\n`;
             menuText += `┃ 👤 *User:* @${cleanJid(senderId)}\n`;
             menuText += `┃ 🤖 *Mode:* ${botMode.toUpperCase()}\n`;
             menuText += `┃\n┣━〔 *GLOBAL CONFIG* 〕━┈\n`;
@@ -90,7 +90,7 @@ export default {
                     externalAdReply: {
                         title: "SYSTEM SETTINGS PANEL",
                         body: "Configuration Status",
-                        thumbnailUrl: "https://github.com/GlobalTechInfo.png",
+                        thumbnailUrl: "https://github.com/NOVA-X-Code.png",
                         mediaType: 1,
                         renderLargerThumbnail: true
                     }
