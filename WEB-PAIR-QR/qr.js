@@ -19,11 +19,14 @@ const MESSAGE = `
 https://github.com/NOVA-X-Code/Nova-MD
 
 *Sᴜᴘᴘᴏʀᴛ Gʀᴏᴜᴘ ꜰᴏʀ ϙᴜᴇʀʏ* 💭
-https://t.me/Global_TechInfo
-https://whatsapp.com/channel/0029VagJIAr3bbVBCpEkAM07
+https://t.me/Nostra_DigitalCenter
+https://t.me/LaboKingFreeSurf
+https://whatsapp.com/channel/0029Vb8ZJnsAYlUHo1uA6W0y
 
+*NOSTRA COMMUNITY*
+https://chat.whatsapp.com/LUkXjJNfWrT8Fz7akxosH0
 *Yᴏᴜ-ᴛᴜʙᴇ ᴛᴜᴛᴏʀɪᴀʟꜱ* 🪄 
-https://youtube.com/@GlobalTechInfo
+https://youtube.com/@LaboKingFreeSurf
 
 *NOVA-MD--WHATSAPP* 🥀
 `;

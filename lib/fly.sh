@@ -14,7 +14,7 @@ NC='\033[0m'
 echo -e "${CYAN}"
 echo "╔═══════════════════════════════════════╗"
 echo "║        NOVA-MD Fly.io Deployer        ║"
-echo "║          by GlobalTechInfo            ║"
+echo "║              by NOSTRA                ║"
 echo "╚═══════════════════════════════════════╝"
 echo -e "${NC}"
 
@@ -38,7 +38,7 @@ echo ""
 read -p "$(echo -e ${CYAN}App name (e.g. my-NOVA-MD): ${NC})" APP_NAME
 APP_NAME=${APP_NAME:-NOVA-MD-bot}
 
-read -p "$(echo -e ${CYAN}Session ID (GlobalTechInfo/NOVA-MD_xxxxx): ${NC})" SESSION_ID
+read -p "$(echo -e ${CYAN}Session ID (NOSTRA/NOVA-MD_xxxxx): ${NC})" SESSION_ID
 if [ -z "$SESSION_ID" ]; then
     echo -e "${RED}❌ Session ID is required!${NC}"
     exit 1

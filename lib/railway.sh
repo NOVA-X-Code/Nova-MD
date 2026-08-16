@@ -14,7 +14,7 @@ NC='\033[0m'
 echo -e "${CYAN}"
 echo "╔═══════════════════════════════════════╗"
 echo "║       NOVA-MD Railway Deployer        ║"
-echo "║          by GlobalTechInfo            ║"
+echo "║              by NOSTRA                ║"
 echo "╚═══════════════════════════════════════╝"
 echo -e "${NC}"
 
@@ -35,7 +35,7 @@ echo ""
 echo -e "${BOLD}📋 Enter your bot details:${NC}"
 echo ""
 
-read -p "$(echo -e ${CYAN}Session ID (GlobalTechInfo/NOVA-MD_xxxxx): ${NC})" SESSION_ID
+read -p "$(echo -e ${CYAN}Session ID (NOSTRA/NOVA-MD_xxxxx): ${NC})" SESSION_ID
 if [ -z "$SESSION_ID" ]; then
     echo -e "${RED}❌ Session ID is required!${NC}"
     exit 1
