@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { dataFile } from '../lib/paths.js';
 import store from '../lib/lightweight_store.js';
-import commandHandler from './commandHandler.js';
+import commandHandler from '../lib/commandHandler.js';
 import config from '../config.js';
 
 const MONGO_URL = process.env.MONGO_URL;
