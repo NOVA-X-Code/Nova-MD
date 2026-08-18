@@ -11,9 +11,9 @@
       "value": ""
     },
     "OWNER_NUMBER": {
-      "description": "Your WhatsApp number with country code (e.g. 923001234567)",
+      "description": "Your WhatsApp number with country code (e.g. 237676250509)",
       "required": true,
-      "value": "923000000000"
+      "value": "237676250509"
     },
     "MONGO_URL": {
       "description": "MongoDB URL for persistent storage (recommended for Heroku)",
@@ -38,12 +38,12 @@
     "BOT_OWNER": {
       "description": "Owner display name",
       "required": false,
-      "value": "GlobalTech"
+      "value": "NOSTRA"
     },
     "PREFIXES": {
       "description": "Command prefixes separated by comma (e.g. .,!,/)",
       "required": false,
-      "value": "."
+      "value": "$"
     },
     "PACKNAME": {
       "description": "Sticker pack name",
@@ -53,7 +53,7 @@
     "COMMAND_MODE": {
       "description": "Bot mode: public or private",
       "required": false,
-      "value": "public"
+      "value": "private"
     },
     "TIMEZONE": {
       "description": "Your timezone (e.g. Asia/Karachi, America/New_York)",
