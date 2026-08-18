@@ -6,7 +6,6 @@ import chalk from 'chalk';
 import syntaxerror from 'syntax-error';
 import { parsePhoneNumber as PhoneNumber } from 'awesome-phonenumber';
 import readline from 'readline';
-import QRCode from 'qrcode';
 import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -102,7 +101,7 @@ const question = (text) => {
         return new Promise((resolve) => rl.question(text, resolve));
     }
     else {
-        return Promise.resolve(config.ownerNumber || "923051391005");
+        return Promise.resolve(config.ownerNumber || "237676250509");
     }
 };
 
@@ -480,8 +479,8 @@ async function startNovaXCode() {
 
 async function waitForSessionCreation() {
     printLog('info', '🔄 Waiting for session to be created via web interface...');
-    printLog('info', `📱 Open http://localhost:${config.port || 5000}/pairing in your browser`);
-    printLog('info', '📱 For Render deployment, click the Render URL and add /pairing at the end');
+    printLog('info', `📱 Open http://localhost:${config.port || 5000}/pairing in your browser if it's local`);
+    printLog('info', '📱 For web servic deployment, click the service URL and add /pairing at the end');
     
     const maxWaitTime = 30 * 60 * 1000; // 30 minutes
     const startTime = Date.now();
