@@ -115,12 +115,12 @@ Note: Make Sure Add Your Email And Password ( Required In mega.js ) Before Runni
 
 ## OTHER PROJECTS:
 
-- [PASTE SESSION](https://github.com/GlobalTechInfo/PAIRING-WEB)
-- [WHATSAPP BOT](https://github.com/GlobalTechInfo/MEGA-AI)
-- [TELEGRAM BOT](https://github.com/GlobalTechInfo/TELEGRAM-AI#readme)
+- [PASTE SESSION](https://github.com/NOVA-X-Code/PAIRING-WEB)
+- [WHATSAPP BOT](https://github.com/NOVA-X-Code/NOVA-AI)
+- [TELEGRAM BOT](https://github.com/NOVA-X-Code/TELEGRAM-AI#readme)
 
 
 
-| [![Nostra](https://github.com/GlobalTechInfo.png?size=100)](https://github.com/GlobalTechInfo) |
+| [![Nostra](https://github.com/NOVA-X-Code.png?size=100)](https://github.com/NOVA-X-Code) |
 | --- |
-| [Nostra](https://github.com/GlobalTechInfo) |
+| [Nostra](https://github.com/NOVA-X-Code) |

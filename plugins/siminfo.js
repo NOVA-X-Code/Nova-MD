@@ -16,7 +16,7 @@ export default {
                 text: `📱 *SIM / Phone Info*\n\n` +
                     `*Usage:* \`.siminfo <number>\`\n\n` +
                     `*Examples:*\n` +
-                    `• \`.siminfo +923001234567\` — Pakistan\n` +
+                    `• \`.siminfo +237676250509\` — Cameroon\n` +
                     `• \`.siminfo +14155552671\` — USA\n` +
                     `• \`.siminfo +447911123456\` — UK\n` +
                     `• \`.siminfo +971501234567\` — UAE\n\n` +

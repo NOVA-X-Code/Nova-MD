@@ -1,5 +1,5 @@
 import 'dotenv/config';
-const _prefixes = process.env.PREFIXES ? process.env.PREFIXES.split(',') : ['.', '!', '/', '#'];
+const _prefixes = process.env.PREFIXES ? process.env.PREFIXES.split(',') : ['$','#'];
 const config = {
     // Bot Identity
     botName: process.env.BOT_NAME || 'NOVA-MD',
@@ -8,16 +8,16 @@ const config = {
     author: process.env.AUTHOR || 'NOSTRA',
     packname: process.env.PACKNAME || 'NOVA-MD',
     description: process.env.DESCRIPTION || 'High performance multi-device WhatsApp bot',
-    version: '6.0.0',
+    version: '2.0.0',
     // Bot Config
     prefixes: _prefixes,
     prefix: _prefixes[0],
-    commandMode: process.env.COMMAND_MODE || 'public',
+    commandMode: process.env.COMMAND_MODE || 'private',
     timeZone: process.env.TIMEZONE || 'Africa/Douala',
     // Links
-    channelLink: process.env.CHANNEL_LINK || 'https://whatsapp.com/channel/0029VagJIAr3bbVBCpEkAM07',
+    channelLink: process.env.CHANNEL_LINK || 'https://whatsapp.com/channel/0029Vb8ZJnsAYlUHo1uA6W0y',
     updateZipUrl: process.env.UPDATE_URL || 'https://github.com/NOVA-X-Code/Nova-MD/archive/refs/heads/main.zip',
-    ytChannel: process.env.YT_CHANNEL || 'GlobalTechInfo',
+    ytChannel: process.env.YT_CHANNEL || 'https://www.youtube.com/@LaboKingFreeSurf',
     // Session
     sessionId: process.env.SESSION_ID || '',
     pairingNumber: process.env.PAIRING_NUMBER || '',

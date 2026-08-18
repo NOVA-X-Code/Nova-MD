@@ -8,7 +8,7 @@ export default {
         const chatId = message.key.remoteJid;
         if (!args || args.length === 0) {
             return sock.sendMessage(chatId, {
-                text: '*🌟 Please provide a GitHub URL or username and repository name.*\n\n*Example usage:*\n\n.clone https://github.com/NOVA-X-Code/Nova-MD\n\n.clone GlobalTechInfo NOVA-MD'
+                text: '*🌟 Please provide a GitHub URL or username and repository name.*\n\n*Example usage:*\n\n.clone https://github.com/NOVA-X-Code/Nova-MD\n\n.clone NOSTRA NOVA-MD'
             });
         }
         let url = '';
@@ -30,7 +30,7 @@ export default {
         }
         else {
             return sock.sendMessage(chatId, {
-                text: '*Missing repository info.*\n\n*Example usage:*\n\n.clone https://github.com/NOVA-X-Code/Nova-MD\n\n.clone GlobalTechInfo NOVA-MD'
+                text: '*Missing repository info.*\n\n*Example usage:*\n\n.clone https://github.com/NOVA-X-Code/Nova-MD\n\n.clone NOSTRA NOVA-MD'
             });
         }
         await sock.sendMessage(chatId, { text: '⏱️ Preparing repository zip...' });

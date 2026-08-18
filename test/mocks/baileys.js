@@ -34,7 +34,7 @@ export function createMockSock(overrides = {}) {
         user: {
             id: '923000000000:1@s.whatsapp.net',
             lid: '923000000000:1@lid',
-            name: 'MEGA Bot'
+            name: 'NOVA Bot'
         },
         store: {
             contacts: {},

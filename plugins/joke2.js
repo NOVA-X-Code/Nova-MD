@@ -8,7 +8,7 @@ export default {
     async handler(sock, message, args, context) {
         const chatId = context.chatId || message.key.remoteJid;
         try {
-            const res = await axios.get('https://raw.githubusercontent.com/GlobalTechInfo/Database/main/text/random_jokes.txt');
+            const res = await axios.get('https://raw.githubusercontent.com/NOVA-X-Code/Database/main/text/random_jokes.txt');
             if (!res.data) {
                 return await sock.sendMessage(chatId, { text: '❌ Failed to fetch joke.' }, { quoted: message });
             }

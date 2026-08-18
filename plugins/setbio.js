@@ -1,9 +1,9 @@
 import store from '../lib/lightweight_store.js';
 import axios from 'axios';
 const QUOTE_URLS = [
-    'https://raw.githubusercontent.com/GlobalTechInfo/Islamic-Database/main/text/random_quotes.txt',
-    'https://raw.githubusercontent.com/GlobalTechInfo/Islamic-Database/main/text/motivational_quotes.txt',
-    'https://raw.githubusercontent.com/GlobalTechInfo/Islamic-Database/main/text/pickup_quotes.txt'
+    'https://raw.githubusercontent.com/NOVA-X-Code/Islamic-Database/main/text/random_quotes.txt',
+    'https://raw.githubusercontent.com/NOVA-X-Code/Islamic-Database/main/text/motivational_quotes.txt',
+    'https://raw.githubusercontent.com/NOVA-X-Code/Islamic-Database/main/text/pickup_quotes.txt'
 ];
 let cachedQuotes = [];
 let lastFetchTime = 0;

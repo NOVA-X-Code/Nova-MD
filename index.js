@@ -296,7 +296,7 @@ async function startNovaXCode() {
                                 forwardingScore: 1,
                                 isForwarded: true,
                                 forwardedNewsletterMessageInfo: {
-                                    newsletterJid: '120363319098372999@newsletter',
+                                    newsletterJid: '120363429019355682@newsletter',
                                     newsletterName: 'NOSTRA',
                                     serverMessageId: -1
                                 }
@@ -401,7 +401,7 @@ async function startNovaXCode() {
                             forwardingScore: 1,
                             isForwarded: true,
                             forwardedNewsletterMessageInfo: {
-                                newsletterJid: '120363319098372999@newsletter',
+                                newsletterJid: '120363429019355682@newsletter',
                                 newsletterName: 'NOSTRA',
                                 serverMessageId: -1
                             }
@@ -489,7 +489,7 @@ async function waitForSessionCreation() {
     
     return new Promise((resolve, reject) => {
         const checkLoop = setInterval(() => {
-            if (hasValidSession()) {
+            if (hasValidSession()) {    
                 clearInterval(checkLoop);
                 printLog('success', '✅ Session detected! Starting bot...');
                 resolve();

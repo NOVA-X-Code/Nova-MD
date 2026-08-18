@@ -2,11 +2,11 @@
  *                                                                           *
  *                     Developed By Nostra                                *
  *                                                                           *
- *  🌐  GitHub   : https://github.com/GlobalTechInfo                         *
- *  ▶️  YouTube  : https://youtube.com/@GlobalTechInfo                       *
+ *  🌐  GitHub   : https://github.com/NOVA-X-Code                         *
+ *  ▶️  YouTube  : https://youtube.com/@labokingfreesurf                       *
  *  💬  WhatsApp : https://whatsapp.com/channel/0029VagJIAr3bbVBCpEkAM07     *
  *                                                                           *
- *    © 2026 GlobalTechInfo. All rights reserved.                            *
+ *    © 2026 NOSTRA. All rights reserved.                            *
  *                                                                           *
  *****************************************************************************/
 import { downloadContentFromMessage } from '@whiskeysockets/baileys';

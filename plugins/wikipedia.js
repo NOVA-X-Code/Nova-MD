@@ -19,7 +19,7 @@ export default {
         try {
             const res = await axios.get(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(formattedQuery)}`, {
                 headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) MEGA-BOT/1.0',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) NOVA-BOT/1.0',
                     'Accept-Language': 'en'
                 }
             });

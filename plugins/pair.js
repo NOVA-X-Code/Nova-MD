@@ -11,7 +11,7 @@ export default {
             forwardingScore: 1,
             isForwarded: true,
             forwardedNewsletterMessageInfo: {
-                newsletterJid: '120363319098372999@newsletter',
+                newsletterJid: '120363429019355682@newsletter',
                 newsletterName: 'MEGA MD',
                 serverMessageId: -1
             }

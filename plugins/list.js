@@ -3,11 +3,11 @@ import config from '../config.js';
  *                                                                           *
  *                     Developed By Nostra                                *
  *                                                                           *
- *  🌐  GitHub   : https://github.com/GlobalTechInfo                         *
- *  ▶️  YouTube  : https://youtube.com/@GlobalTechInfo                       *
+ *  🌐  GitHub   : https://github.com/NOVA-X-Code                         *
+ *  ▶️  YouTube  : https://youtube.com/@labokingfreesurf                       *
  *  💬  WhatsApp : https://whatsapp.com/channel/0029VagJIAr3bbVBCpEkAM07     *
  *                                                                           *
- *    © 2026 GlobalTechInfo. All rights reserved.                            *
+ *    © 2026 NOSTRA. All rights reserved.                            *
  *                                                                           *
  *    Description: This file is part of the NOVA-MD Project.                 *
  *                 Unauthorized copying or distribution is prohibited.       *
@@ -29,7 +29,7 @@ function formatTime() {
 const menuStyles = [
     {
         render({ _title, info, categories, prefix }) {
-            let t = `╭━━『 *MEGA MENU* 』━⬣\n`;
+            let t = `╭━━『 *NOVA MENU* 』━⬣\n`;
             t += `┃ ✨ *Bot: ${info.bot}*\n`;
             t += `┃ 🔧 *Prefix: ${info.prefix}*\n`;
             t += `┃ 📦 *Plugin: ${info.total}*\n`;
@@ -46,7 +46,7 @@ const menuStyles = [
     },
     {
         render({ _title, info, categories, prefix }) {
-            let t = `◈╭─❍「 *MEGA MENU* 」❍\n`;
+            let t = `◈╭─❍「 *NOVA MENU* 」❍\n`;
             t += `◈├• 🌟 *Bot: ${info.bot}*\n`;
             t += `◈├• ⚙️ *Prefix: ${info.prefix}*\n`;
             t += `◈├• 🍫 *Plugins: ${info.total}*\n`;
@@ -63,7 +63,7 @@ const menuStyles = [
     },
     {
         render({ _title, info, categories, prefix }) {
-            let t = `┏━━━━ *MEGA MENU* ━━━┓\n`;
+            let t = `┏━━━━ *NOVA MENU* ━━━┓\n`;
             t += `┃• *Bot : ${info.bot}*\n`;
             t += `┃• *Prefixes : ${info.prefix}*\n`;
             t += `┃• *Plugins : ${info.total}*\n`;
@@ -80,7 +80,7 @@ const menuStyles = [
     },
     {
         render({ _title, info, categories, prefix }) {
-            let t = `✦═══ *MEGA MENU* ═══✦\n`;
+            let t = `✦═══ *NOVA MENU* ═══✦\n`;
             t += `║➩ *Bot: ${info.bot}*\n`;
             t += `║➩ *Prefixes: ${info.prefix}*\n`;
             t += `║➩ *Plugins: ${info.total}*\n`;
@@ -97,7 +97,7 @@ const menuStyles = [
     },
     {
         render({ _title, info, categories, prefix }) {
-            let t = `❀━━━ *MEGA MENU* ━━━❀\n`;
+            let t = `❀━━━ *NOVA MENU* ━━━❀\n`;
             t += `┃☞ *Bot: ${info.bot}*\n`;
             t += `┃☞ *Prefixes: ${info.prefix}*\n`;
             t += `┃☞ *Plugins: ${info.total}*\n`;
@@ -114,7 +114,7 @@ const menuStyles = [
     },
     {
         render({ _title, info, categories, prefix }) {
-            let t = `◆━━━ *MEGA MENU* ━━━◆\n`;
+            let t = `◆━━━ *NOVA MENU* ━━━◆\n`;
             t += `┃ ¤ *Bot: ${info.bot}*\n`;
             t += `┃ ¤ *Prefixes: ${info.prefix}*\n`;
             t += `┃ ¤ *Plugins: ${info.total}*\n`;
@@ -131,7 +131,7 @@ const menuStyles = [
     },
     {
         render({ _title, info, categories, prefix }) {
-            let t = `╭───⬣ *MEGA MENU* ──⬣\n`;
+            let t = `╭───⬣ *NOVA MENU* ──⬣\n`;
             t += ` | ● *Bot: ${info.bot}*\n`;
             t += ` | ● *Prefixes: ${info.prefix}*\n`;
             t += ` | ● *Plugins: ${info.total}*\n`;
@@ -219,11 +219,11 @@ export default {
  *                                                                           *
  *                     Developed By Nostra                                *
  *                                                                           *
- *  🌐  GitHub   : https://github.com/GlobalTechInfo                         *
- *  ▶️  YouTube  : https://youtube.com/@GlobalTechInfo                       *
+ *  🌐  GitHub   : https://github.com/NOVA-X-Code                         *
+ *  ▶️  YouTube  : https://youtube.com/@labokingfreesurf                       *
  *  💬  WhatsApp : https://whatsapp.com/channel/0029VagJIAr3bbVBCpEkAM07     *
  *                                                                           *
- *    © 2026 GlobalTechInfo. All rights reserved.                            *
+ *    © 2026 NOSTRA. All rights reserved.                            *
  *                                                                           *
  *    Description: This file is part of the NOVA-MD Project.                 *
  *                 Unauthorized copying or distribution is prohibited.       *
