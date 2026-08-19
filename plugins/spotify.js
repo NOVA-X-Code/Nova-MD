@@ -1,5 +1,5 @@
 import axios from 'axios';
-const API = 'https://api.NovaXCode.dpdns.org/api/spotify/download';
+const API = 'https://api.qasimdev.dpdns.org/api/spotify/download';
 const API_KEY = 'qasim-dev';
 const formatDuration = (ms) => {
     const m = Math.floor(ms / 60000);
