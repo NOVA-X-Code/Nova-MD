@@ -30,17 +30,21 @@ export default {
             text += `│ 📊 Status: ${status.enabled} ${config.enabled ? 'Enabled' : 'Disabled'}\n`;
             text += `│ 🔒 Mode: ${status.mode}\n`;
             text += `│ 🔌 Provider: ${status.provider}\n`;
-            text += `│ ${status.apiConfigured ? '✅' : '❌'} API: ${config.apiKey ? 'Key configured' : 'Not configured'}\n`;
+            text += `│ ${config.apiKey ? '✅' : '❌'} API key: ${config.apiKey ? 'Configured' : 'NOT SET — chatbot won\'t respond'}\n`;
             text += `│ ${config.apiUrl ? '✅' : '❌'} URL: ${config.apiUrl || 'Not configured'}\n`;
             text += `│ 📚 Context: ${config.customContext ? '✅ Custom' : '❌ Default'}\n`;
             text += `│ 🔄 History: ${config.maxHistory} messages\n`;
             text += `│ 🌡️ Temperature: ${config.temperature}\n`;
             text += `│ ⚡ Commands: ${config.executeCommands ? '✅ Enabled' : '❌ Disabled'}\n`;
             text += `└─────────────────────────\n\n`;
-            
+
+            if (!config.apiKey) {
+                text += `⚠️ *An API key is required.* The chatbot will not answer anyone until you run \`.cbc apikey <your_key>\`.\n\n`;
+            }
+
             text += `*📋 Available commands:*\n`;
-            text += `• \`.cbc provider <default|gemini|ngrok|openai|custom>\`\n`;
-            text += `• \`.cbc apikey <your_api_key>\`\n`;
+            text += `• \`.cbc provider <puter|pollinations|gemini|ngrok|openai|custom>\`\n`;
+            text += `• \`.cbc apikey <your_api_key>\` _(required — for puter: your Puter auth token)_\n`;
             text += `• \`.cbc apiurl <your_api_url>\`\n`;
             text += `• \`.cbc mode <public|private>\`\n`;
             text += `• \`.cbc context <your_context>\`\n`;
@@ -49,6 +53,8 @@ export default {
             text += `• \`.cbc status\`\n\n`;
             
             text += `💡 *Examples:*\n`;
+            text += `• \`.cbc apikey your_puter_auth_token\` _(required first!)_\n`;
+            text += `• \`.cbc provider puter\` _(default — free, needs a Puter account token)_\n`;
             text += `• \`.cbc provider gemini\`\n`;
             text += `• \`.cbc mode public\`\n`;
             text += `• \`.cbc context I am a commercial assistant...\``;
@@ -60,7 +66,7 @@ export default {
         try {
             switch (option) {
                 case 'provider': {
-                    const providers = ['default', 'gemini', 'ngrok', 'openai', 'custom'];
+                    const providers = ['puter', 'pollinations', 'gemini', 'ngrok', 'openai', 'custom'];
                     if (!providers.includes(value)) {
                         return await sock.sendMessage(chatId, {
                             text: `❌ Invalid provider. Choose: ${providers.join(', ')}`,
