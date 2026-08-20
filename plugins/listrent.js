@@ -8,119 +8,91 @@
  *                                                                           *
  *    © 2026 NOSTRA. All rights reserved.                                   *
  *                                                                           *
- *    Description: This file is part of the NOVA-MD Project.                 *
- *                 Unauthorized copying or distribution is prohibited.       *
- *                                                                           *
  *****************************************************************************/
 
-import store from '../lib/lightweight_store.js';
-import fs from 'fs';
-import path from 'path';
-
-const MONGO_URL = process.env.MONGO_URL;
-const POSTGRES_URL = process.env.POSTGRES_URL;
-const MYSQL_URL = process.env.MYSQL_URL;
-const SQLITE_URL = process.env.DB_URL;
-const HAS_DB = !!(MONGO_URL || POSTGRES_URL || MYSQL_URL || SQLITE_URL);
-
-async function getAllCloneSessions() {
-    if (HAS_DB) {
-        const settings = await store.getSetting('clones', 'all') || {};
-        return Object.entries(settings)
-            .filter(([_key, value]) => value && value.status)
-            .map(([authId, data]) => ({ authId, ...data }));
-    } else {
-        const clonesDir = path.join(process.cwd(), 'session', 'clones');
-        if (!fs.existsSync(clonesDir)) return [];
-        const dirs = fs.readdirSync(clonesDir);
-        const clones = [];
-        for (const authId of dirs) {
-            const sessionPath = path.join(clonesDir, authId, 'session.json');
-            if (fs.existsSync(sessionPath)) {
-                try {
-                    const data = JSON.parse(fs.readFileSync(sessionPath, 'utf-8'));
-                    clones.push({ authId, ...data });
-                } catch (e) {
-                    clones.push({ authId, status: 'unknown' });
-                }
-            } else {
-                // Vérifier le fichier JSON de registre
-                const registryPath = path.join(clonesDir, `${authId}.json`);
-                if (fs.existsSync(registryPath)) {
-                    try {
-                        const data = JSON.parse(fs.readFileSync(registryPath, 'utf-8'));
-                        clones.push({ authId, ...data });
-                    } catch (e) {
-                        clones.push({ authId, status: 'unknown' });
-                    }
-                } else {
-                    clones.push({ authId, status: 'unknown' });
-                }
-            }
-        }
-        return clones;
-    }
-}
+import { getAllClonesFromMainDB, isCloneOwner } from '../lib/cloneManager.js';
+import isOwnerOrSudo from '../lib/isOwner.js';
 
 export default {
     command: 'listrent',
-    aliases: ['listclone', 'botclones'],
+    aliases: ['listclone', 'botclones', 'myclones'],
     category: 'owner',
-    description: 'List all currently active sub-bots',
+    description: 'List your own sub-bots (or all if owner)',
     usage: '.listrent',
     async handler(sock, message, args, context) {
         const { chatId } = context;
-        const activeConns = global.conns || [];
-        const storedClones = await getAllCloneSessions();
+        const senderId = message.key.participant || message.key.remoteJid;
+        const isOwner = await isOwnerOrSudo(senderId, sock, chatId);
+        const isFromMe = message.key.fromMe;
+        const senderNumber = senderId.split('@')[0];
 
-        if (activeConns.length === 0 && storedClones.length === 0) {
+        const allClones = await getAllClonesFromMainDB();
+        
+        // Filtrer: si owner => tous, sinon seulement ses clones
+        const clones = (isOwner || isFromMe) 
+            ? allClones 
+            : allClones.filter(c => c.phoneNumber === senderNumber);
+
+        if (clones.length === 0) {
             return await sock.sendMessage(chatId, {
-                text: "*❌ No sub-bots are currently active or stored.*"
+                text: `*📋 MY CLONES*\n\n` +
+                      `No clones found${!isOwner && !isFromMe ? ' for your number' : ''}.\n\n` +
+                      `${!isOwner && !isFromMe ? '💡 Contact the bot owner to create a clone.' : '💡 Create a clone: `.rentbot create 23765976XXXX`'}`
             }, { quoted: message });
         }
 
-        let msg = `*─── [ CLONE BOTS ] ───*\n\n`;
-        msg += `*Storage:* ${HAS_DB ? 'Database 🗄️' : 'File System 📁'}\n\n`;
+        let msg = `*─── [ ${isOwner || isFromMe ? 'ALL' : 'MY'} CLONES ] ───*\n\n`;
+        msg += `📱 Your number: \`${senderNumber}\`\n\n`;
 
-        if (activeConns.length > 0) {
-            msg += `*🟢 ONLINE CLONES:*\n\n`;
-            activeConns.forEach((conn, i) => {
-                const user = conn.user;
-                const number = user.id.split(':')[0];
-                msg += `*${i + 1}.* @${number}\n`;
-                msg += `   └ Name: ${user.name || 'Sub-Bot'}\n`;
-                msg += `   └ Status: Connected ✅\n\n`;
-            });
+        const online = clones.filter(c => c.status === 'online');
+        const configured = clones.filter(c => c.status === 'configured' || c.status === 'active');
+        const offline = clones.filter(c => c.status === 'offline' || !c.status);
+
+        if (online.length > 0) {
+            msg += `🟢 *ONLINE* (${online.length})\n`;
+            for (const clone of online) {
+                const dbDisplay = clone.dbType === 'local' ? '📁 Local' : `💾 ${clone.dbType.toUpperCase()}`;
+                msg += `├─ 📱 \`${clone.phoneNumber}\`\n`;
+                msg += `│  ${dbDisplay}\n`;
+                msg += `│  📅 ${new Date(clone.updatedAt || clone.createdAt).toLocaleString()}\n`;
+                msg += `│  ──────────────────\n`;
+            }
+            msg += `\n`;
         }
 
-        const offlineClones = storedClones.filter(clone => {
-            return !activeConns.some((conn) => {
-                const connNumber = conn.user.id.split(':')[0];
-                return clone.phoneNumber === connNumber;
-            });
-        });
-
-        if (offlineClones.length > 0) {
-            msg += `*⚪ STORED CLONES (Offline):*\n\n`;
-            offlineClones.forEach((clone, i) => {
-                msg += `*${i + 1}.* 📱 ${clone.phoneNumber || 'N/A'}\n`;
-                msg += `   └ ID: ${clone.authId}\n`;
-                msg += `   └ Status: ${clone.status || 'offline'}\n`;
-                msg += `   └ Storage: ${clone.dbType || 'local'}\n`;
-                if (clone.createdAt) {
-                    const date = new Date(clone.createdAt);
-                    msg += `   └ Created: ${date.toLocaleString()}\n`;
-                }
-                msg += `\n`;
-            });
+        if (configured.length > 0) {
+            msg += `🟡 *CONFIGURED* (${configured.length})\n`;
+            for (const clone of configured) {
+                const dbDisplay = clone.dbType === 'local' ? '📁 Local' : `💾 ${clone.dbType.toUpperCase()}`;
+                msg += `├─ 📱 \`${clone.phoneNumber}\`\n`;
+                msg += `│  ${dbDisplay}\n`;
+                msg += `│  📅 ${new Date(clone.updatedAt || clone.createdAt).toLocaleString()}\n`;
+                msg += `│  ──────────────────\n`;
+            }
+            msg += `\n`;
         }
 
-        msg += `*Total Online:* ${activeConns.length}\n`;
-        if (HAS_DB) {
-            msg += `*Total Stored:* ${storedClones.length}`;
+        if (offline.length > 0) {
+            msg += `🔴 *OFFLINE* (${offline.length})\n`;
+            for (const clone of offline) {
+                const dbDisplay = clone.dbType === 'local' ? '📁 Local' : `💾 ${clone.dbType.toUpperCase()}`;
+                msg += `├─ 📱 \`${clone.phoneNumber}\`\n`;
+                msg += `│  ${dbDisplay}\n`;
+                msg += `│  📅 ${new Date(clone.updatedAt || clone.createdAt).toLocaleString()}\n`;
+                msg += `│  ──────────────────\n`;
+            }
+            msg += `\n`;
         }
 
-        const mentions = activeConns.map((c) => c.user.id);
+        msg += `*Total:* ${clones.length}\n`;
+
+        if (isOwner || isFromMe) {
+            msg += `\n📌 *Commands:*\n`;
+            msg += `• \`.rentbot create <phone>\` - Create clone\n`;
+            msg += `• \`.rentbot delete <phone>\` - Delete clone`;
+        }
+
+        const mentions = online.map(c => `${c.phoneNumber}@s.whatsapp.net`).filter(Boolean);
         await sock.sendMessage(chatId, {
             text: msg,
             mentions

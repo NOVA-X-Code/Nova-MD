@@ -8,142 +8,27 @@
  *                                                                           *
  *    © 2026 NOSTRA. All rights reserved.                                   *
  *                                                                           *
- *    Description: This file is part of the NOVA-MD Project.                 *
- *                 Unauthorized copying or distribution is prohibited.       *
- *                                                                           *
  *****************************************************************************/
 
-import makeWASocket, { 
-    useMultiFileAuthState, 
-    DisconnectReason, 
-    fetchLatestBaileysVersion, 
-    makeCacheableSignalKeyStore, 
-    Browsers 
-} from '@whiskeysockets/baileys';
-import NodeCache from 'node-cache';
-import pino from 'pino';
 import fs from 'fs';
-import path, { dirname } from 'path';
+import path,{ dirname } from 'path';
 import { fileURLToPath } from 'url';
-
-import store from '../lib/lightweight_store.js';
+import { 
+    generateSessionId, 
+    saveCloneToMainDB, 
+    getAllClonesFromMainDB, 
+    deleteClone,
+    startClone,
+    checkAndCleanExpiredClones
+} from '../lib/cloneManager.js';
+import isOwnerOrSudo from '../lib/isOwner.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-if (!global.conns) global.conns = [];
-
-const MONGO_URL = process.env.MONGO_URL;
-const POSTGRES_URL = process.env.POSTGRES_URL;
-const MYSQL_URL = process.env.MYSQL_URL;
-const HAS_DB = !!(MONGO_URL || POSTGRES_URL || MYSQL_URL);
-
 // ============================================================
-// SESSION ID GENERATOR
+// TEST DATABASE CONNECTION
 // ============================================================
-
-function generateSessionId(length = 6, numLength = 4) {
-    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-    let randomPart = '';
-    for (let i = 0; i < length; i++) {
-        randomPart += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    const numPart = String(Math.floor(Math.random() * Math.pow(10, numLength))).padStart(numLength, '0');
-    return `NOVA${randomPart}${numPart}`;
-}
-
-// ============================================================
-// CLONE MANAGEMENT VIA LIGHTWEIGHT_STORE
-// ============================================================
-
-async function saveCloneToMainDB(authId, phoneNumber, dbUrl, dbType, status) {
-    try {
-        const data = {
-            phoneNumber,
-            dbUrl: dbUrl || 'local',
-            dbType: dbType || 'local',
-            status: status || 'configured',
-            createdAt: Date.now(),
-            updatedAt: Date.now()
-        };
-        
-        if (HAS_DB) {
-            await store.saveSetting('clones', authId, data);
-            console.log(`✅ [Clone ${authId}] Saved to main database`);
-        } else {
-            const clonesDir = path.join(process.cwd(), 'session', 'clones');
-            if (!fs.existsSync(clonesDir)) {
-                fs.mkdirSync(clonesDir, { recursive: true });
-            }
-            fs.writeFileSync(
-                path.join(clonesDir, `${authId}.json`),
-                JSON.stringify(data, null, 2)
-            );
-            console.log(`✅ [Clone ${authId}] Saved locally`);
-        }
-        return true;
-    } catch (error) {
-        console.error(`❌ Failed to save clone ${authId}:`, error.message);
-        return false;
-    }
-}
-
-async function getAllClonesFromMainDB() {
-    try {
-        if (HAS_DB) {
-            // Récupérer tous les clones via lightweight_store
-            const settings = await store.getSetting('clones', 'all') || {};
-            return Object.entries(settings).map(([authId, data]) => ({
-                authId,
-                phoneNumber: data.phoneNumber,
-                dbType: data.dbType || 'local',
-                status: data.status || 'unknown',
-                createdAt: data.createdAt,
-                updatedAt: data.updatedAt
-            }));
-        } else {
-            const clonesDir = path.join(process.cwd(), 'session', 'clones');
-            if (!fs.existsSync(clonesDir)) return [];
-            const files = fs.readdirSync(clonesDir).filter(f => f.endsWith('.json'));
-            const clones = [];
-            for (const file of files) {
-                const authId = file.replace('.json', '');
-                const data = JSON.parse(fs.readFileSync(path.join(clonesDir, file), 'utf-8'));
-                clones.push({
-                    authId,
-                    phoneNumber: data.phoneNumber,
-                    dbType: data.dbType || 'local',
-                    status: data.status || 'unknown',
-                    createdAt: data.createdAt,
-                    updatedAt: data.updatedAt
-                });
-            }
-            return clones;
-        }
-    } catch (error) {
-        console.error('Failed to get all clones:', error.message);
-        return [];
-    }
-}
-
-async function deleteCloneFromMainDB(authId) {
-    try {
-        if (HAS_DB) {
-            await store.saveSetting('clones', authId, null);
-        } else {
-            const clonesDir = path.join(process.cwd(), 'session', 'clones');
-            const filePath = path.join(clonesDir, `${authId}.json`);
-            if (fs.existsSync(filePath)) {
-                fs.unlinkSync(filePath);
-            }
-        }
-        console.log(`✅ [Clone ${authId}] Removed from main database`);
-        return true;
-    } catch (error) {
-        console.error(`Failed to delete clone ${authId}:`, error.message);
-        return false;
-    }
-}
 
 async function testDatabaseConnection(dbUrl) {
     try {
@@ -178,39 +63,26 @@ async function testDatabaseConnection(dbUrl) {
     }
 }
 
-async function deleteClone(authId) {
+// ============================================================
+// VÉRIFICATION DU PROPRIÉTAIRE PRINCIPAL
+// ============================================================
+
+async function isMainOwner(sock, senderId, chatId) {
+    const isOwner = await isOwnerOrSudo(senderId, sock, chatId);
+    const isFromMe = senderId === sock.user.id || 
+                     senderId === `${sock.user.id.split(':')[0]}@s.whatsapp.net`;
+    
     try {
-        const connIndex = global.conns.findIndex(c => {
-            try {
-                return c.authState?.creds?.me?.id?.includes(authId) || 
-                       c.user?.id?.includes(authId);
-            } catch (e) {
-                return false;
-            }
-        });
-        
-        if (connIndex > -1) {
-            try {
-                await global.conns[connIndex].end();
-                global.conns.splice(connIndex, 1);
-                console.log(`✅ [Clone ${authId}] Disconnected`);
-            } catch (e) {
-                console.error(`Failed to disconnect clone ${authId}:`, e.message);
-            }
+        const ownerData = JSON.parse(fs.readFileSync('./data/owner.json', 'utf-8'));
+        const senderNumber = senderId.split('@')[0];
+        if (ownerData.includes(senderNumber)) {
+            return true;
         }
-
-        await deleteCloneFromMainDB(authId);
-
-        const sessionPath = path.join(process.cwd(), 'session', 'clones', authId);
-        if (fs.existsSync(sessionPath)) {
-            fs.rmSync(sessionPath, { recursive: true, force: true });
-        }
-
-        return { success: true };
-    } catch (error) {
-        console.error(`Failed to delete clone ${authId}:`, error.message);
-        return { success: false, error: error.message };
+    } catch (_e) {
+        // Ignorer l'erreur
     }
+    
+    return isOwner || isFromMe;
 }
 
 // ============================================================
@@ -221,12 +93,38 @@ export default {
     command: 'rentbot',
     aliases: ['botclone', 'clonebot'],
     category: 'owner',
-    description: 'Create, list, or delete bot clones',
-    usage: '.rentbot [create|list|delete] [params]',
+    description: 'Create bot clones with optional expiry',
+    usage: '.rentbot [create|list|delete|clean] [params]',
     ownerOnly: true,
     async handler(sock, message, args, context) {
         const { chatId } = context;
+        const senderId = message.key.participant || message.key.remoteJid;
+        
+        const isMainOwnerValue = await isMainOwner(sock, senderId, chatId);
+        
+        if (!isMainOwnerValue) {
+            return await sock.sendMessage(chatId, {
+                text: '❌ *You are not authorized to use this command!*\n\n' +
+                      '🔒 This command is restricted to the **bot owner** only.'
+            }, { quoted: message });
+        }
+
         const subCommand = args[0]?.toLowerCase();
+
+        // ============================================================
+        // CLEAN EXPIRED CLONES
+        // ============================================================
+        if (subCommand === 'clean' || subCommand === 'cleanup') {
+            await sock.sendMessage(chatId, {
+                text: '🧹 *Cleaning expired clones...*'
+            }, { quoted: message });
+
+            const cleaned = await checkAndCleanExpiredClones();
+            
+            return await sock.sendMessage(chatId, {
+                text: `✅ *Cleanup complete!*\n\nRemoved ${cleaned} expired clone${cleaned > 1 ? 's' : ''}.`
+            }, { quoted: message });
+        }
 
         // ============================================================
         // LIST CLONES
@@ -236,17 +134,17 @@ export default {
             
             if (clones.length === 0) {
                 return await sock.sendMessage(chatId, {
-                    text: `*📋 CLONE LIST*\n\n` +
-                          `No clones found.\n\n` +
-                          `💡 *Create a clone:* \`.rentbot create 23765976XXXX\``
+                    text: `*📋 CLONE LIST*\n\nNo clones found.\n\n💡 *Create a clone:* \`.rentbot create 23765976XXXX\``
                 }, { quoted: message });
             }
 
             let text = `*📋 CLONE LIST* (${clones.length})\n\n`;
+            text += '🔒 *Owner only*\n\n';
             
             const online = clones.filter(c => c.status === 'online');
             const configured = clones.filter(c => c.status === 'configured' || c.status === 'active');
             const offline = clones.filter(c => c.status === 'offline' || !c.status);
+            const expired = clones.filter(c => c.expired === true);
             
             if (online.length > 0) {
                 text += `🟢 *ONLINE* (${online.length})\n`;
@@ -254,10 +152,14 @@ export default {
                     const dbDisplay = clone.dbType === 'local' ? '📁 Local' : `💾 ${clone.dbType.toUpperCase()}`;
                     text += `├─ 📱 \`${clone.phoneNumber}\`\n`;
                     text += `│  ${dbDisplay}\n`;
+                    if (clone.expiryDays) {
+                        const remaining = Math.ceil((clone.expiresAt - Date.now()) / (24 * 60 * 60 * 1000));
+                        text += `│  ⏳ ${remaining} days remaining\n`;
+                    }
                     text += `│  📅 ${new Date(clone.updatedAt || clone.createdAt).toLocaleString()}\n`;
-                    text += `│  ──────────────────\n`;
+                    text += '│  ──────────────────\n';
                 }
-                text += `\n`;
+                text += '\n';
             }
             
             if (configured.length > 0) {
@@ -266,10 +168,14 @@ export default {
                     const dbDisplay = clone.dbType === 'local' ? '📁 Local' : `💾 ${clone.dbType.toUpperCase()}`;
                     text += `├─ 📱 \`${clone.phoneNumber}\`\n`;
                     text += `│  ${dbDisplay}\n`;
+                    if (clone.expiryDays) {
+                        const remaining = Math.ceil((clone.expiresAt - Date.now()) / (24 * 60 * 60 * 1000));
+                        text += `│  ⏳ ${remaining} days remaining\n`;
+                    }
                     text += `│  📅 ${new Date(clone.updatedAt || clone.createdAt).toLocaleString()}\n`;
-                    text += `│  ──────────────────\n`;
+                    text += '│  ──────────────────\n';
                 }
-                text += `\n`;
+                text += '\n';
             }
             
             if (offline.length > 0) {
@@ -278,17 +184,33 @@ export default {
                     const dbDisplay = clone.dbType === 'local' ? '📁 Local' : `💾 ${clone.dbType.toUpperCase()}`;
                     text += `├─ 📱 \`${clone.phoneNumber}\`\n`;
                     text += `│  ${dbDisplay}\n`;
+                    if (clone.expiryDays) {
+                        const remaining = Math.ceil((clone.expiresAt - Date.now()) / (24 * 60 * 60 * 1000));
+                        text += `│  ⏳ ${remaining} days remaining\n`;
+                    }
                     text += `│  📅 ${new Date(clone.updatedAt || clone.createdAt).toLocaleString()}\n`;
-                    text += `│  ──────────────────\n`;
+                    text += '│  ──────────────────\n';
                 }
-                text += `\n`;
+                text += '\n';
+            }
+            
+            if (expired.length > 0) {
+                text += `☠️ *EXPIRED* (${expired.length})\n`;
+                for (const clone of expired) {
+                    text += `├─ 📱 \`${clone.phoneNumber}\`\n`;
+                    text += '│  💀 Expired\n';
+                    text += `│  📅 ${new Date(clone.createdAt).toLocaleString()}\n`;
+                    text += '│  ──────────────────\n';
+                }
+                text += '\n';
             }
 
-            text += `📌 *Commands:*\n`;
-            text += `• \`.rentbot create <phone> <db_url?>\` - Create clone\n`;
-            text += `• \`.rentbot delete <phone>\` - Delete clone\n`;
-            text += `• \`.rentbot list\` - Show this list\n\n`;
-            text += `💾 *Storage: local DB*`;
+            text += '📌 *Commands:*\n';
+            text += '• `.rentbot create <phone> <days?>` - Create clone\n';
+            text += '• `.rentbot create <phone> <db_url> <days?>` - With DB\n';
+            text += '• `.rentbot delete <phone>` - Delete clone\n';
+            text += '• `.rentbot list` - Show this list\n';
+            text += '• `.rentbot clean` - Remove expired clones';
 
             return await sock.sendMessage(chatId, { text }, { quoted: message });
         }
@@ -301,8 +223,7 @@ export default {
             
             if (!phoneNumber) {
                 return await sock.sendMessage(chatId, {
-                    text: `❌ *Please specify the phone number!*\n\n` +
-                          `📌 *Usage:* \`.rentbot delete 23765976XXXX\``
+                    text: '❌ *Please specify the phone number!*\n\n📌 *Usage:* `.rentbot delete 23765976XXXX`'
                 }, { quoted: message });
             }
 
@@ -316,15 +237,21 @@ export default {
             }
 
             const cloneToDelete = targetClones[0];
+            let expiryInfo = '';
+            if (cloneToDelete.expiryDays) {
+                const remaining = Math.ceil((cloneToDelete.expiresAt - Date.now()) / (24 * 60 * 60 * 1000));
+                expiryInfo = `⏳ ${remaining} days remaining\n`;
+            }
             
             await sock.sendMessage(chatId, {
                 text: `⚠️ *Confirm deletion*\n\n` +
                       `📱 Phone: \`${cloneToDelete.phoneNumber}\`\n` +
                       `💾 Storage: ${cloneToDelete.dbType === 'local' ? '📁 Local' : `💾 ${cloneToDelete.dbType.toUpperCase()}`}\n` +
+                      expiryInfo +
                       `📅 Created: ${new Date(cloneToDelete.createdAt).toLocaleString()}\n\n` +
-                      `❓ *Are you sure?* Reply with:\n` +
+                      '❓ *Are you sure?* Reply with:\n' +
                       `• \`.rentbot confirm ${cloneToDelete.phoneNumber}\` - Yes\n` +
-                      `• \`.rentbot list\` - Cancel`
+                      '• `.rentbot list` - Cancel'
             }, { quoted: message });
             
             global.pendingDelete = { phoneNumber: cloneToDelete.phoneNumber, authId: cloneToDelete.authId, chatId };
@@ -339,7 +266,7 @@ export default {
             
             if (!phoneNumber || !global.pendingDelete || global.pendingDelete.phoneNumber !== phoneNumber) {
                 return await sock.sendMessage(chatId, {
-                    text: `❌ *No pending deletion found.*`
+                    text: '❌ *No pending deletion found.*'
                 }, { quoted: message });
             }
 
@@ -364,14 +291,35 @@ export default {
         // ============================================================
         if (subCommand === 'create' || subCommand === 'new' || subCommand === 'add') {
             const userNumber = args[1]?.replace(/[^0-9]/g, '');
-            const dbUrl = args.slice(2).join(' ');
+            
+            // Parser les arguments: [phone] [db_url] [days] ou [phone] [days]
+            let dbUrl = null;
+            let expiryDays = null;
+            let argIndex = 2;
+            
+            while (argIndex < args.length) {
+                const arg = args[argIndex];
+                // Vérifier si c'est un nombre (durée en jours)
+                if (/^\d+$/.test(arg) && !arg.includes('.') && !arg.includes(':')) {
+                    expiryDays = parseInt(arg, 10);
+                } else if (arg.startsWith('http') || arg.startsWith('mongodb') || 
+                          arg.startsWith('postgresql') || arg.startsWith('mysql')) {
+                    dbUrl = arg;
+                } else if (!dbUrl) {
+                    dbUrl = arg;
+                }
+                argIndex++;
+            }
             
             if (!userNumber) {
                 return await sock.sendMessage(chatId, {
-                    text: `❌ *Phone number required!*\n\n` +
-                          `📌 *Usage:*\n` +
-                          `• Local: \`.rentbot create 23765976XXXX\`\n` +
-                          `• MongoDB: \`.rentbot create 23765976XXXX mongodb://...\``
+                    text: '❌ *Phone number required!*\n\n📌 *Usage:*\n' +
+                          '• Local: `.rentbot create 23765976XXXX` (no expiry)\n' +
+                          '• With expiry: `.rentbot create 23765976XXXX 30` (30 days)\n' +
+                          '• With DB: `.rentbot create 23765976XXXX mongodb://... 30`\n\n' +
+                          '💡 *Examples:*\n' +
+                          '• `.rentbot create 23765976XXXX 15` - 15 days\n' +
+                          '• `.rentbot create 23765976XXXX mongodb://... 7` - 7 days with DB'
                 }, { quoted: message });
             }
 
@@ -386,8 +334,7 @@ export default {
                 const testResult = await testDatabaseConnection(dbUrl);
                 if (!testResult.success) {
                     return await sock.sendMessage(chatId, {
-                        text: `❌ *DB connection failed!*\n\n${testResult.error}\n\n` +
-                              `📌 Try local: \`.rentbot create ${userNumber}\``
+                        text: `❌ *DB connection failed!*\n\n${testResult.error}\n\n📌 Try local: \`.rentbot create ${userNumber}\``
                     }, { quoted: message });
                 }
                 dbType = testResult.type;
@@ -401,98 +348,55 @@ export default {
                 fs.mkdirSync(sessionPath, { recursive: true });
             }
 
-            await saveCloneToMainDB(authId, userNumber, dbUrl || 'local', dbType, 'configured');
+            const expiryText = expiryDays ? `⏳ ${expiryDays} days` : '♾️ No expiry';
+            
+            await saveCloneToMainDB(authId, userNumber, dbUrl || 'local', dbType, 'configured', expiryDays);
 
             await sock.sendMessage(chatId, {
-                text: `✅ *Clone configured!*\n\n📱 ${userNumber}\n💾 ${displayDbInfo}\n\n🔄 Getting pairing code...`
+                text: `✅ *Clone configured!*\n\n📱 ${userNumber}\n💾 ${displayDbInfo}\n${expiryText}\n\n🔄 Getting pairing code...`
             }, { quoted: message });
 
-            async function startClone() {
-                const { state, saveCreds } = await useMultiFileAuthState(sessionPath);
-                const { version } = await fetchLatestBaileysVersion();
-                const msgRetryCounterCache = new NodeCache();
-                
-                const conn = makeWASocket({
-                    version,
-                    logger: pino({ level: 'silent' }),
-                    printQRInTerminal: false,
-                    browser: Browsers.macOS("Chrome"),
-                    auth: {
-                        creds: state.creds,
-                        keys: makeCacheableSignalKeyStore(state.keys, pino({ level: "fatal" })),
-                    },
-                    markOnlineOnConnect: true,
-                    msgRetryCounterCache,
-                    connectTimeoutMs: 120000,
-                    defaultQueryTimeoutMs: 0,
-                    keepAliveIntervalMs: 30000,
-                    mobile: false
-                });
-
-                if (!conn.authState.creds.registered) {
-                    await new Promise(resolve => setTimeout(resolve, 6000));
-                    try {
-                        let code = await conn.requestPairingCode(userNumber);
-                        code = code?.match(/.{1,4}/g)?.join("-") || code;
-
-                        const pairingText = `🔐 *PAIRING CODE*\n\n` +
-                            `📱 Number: \`${userNumber}\`\n` +
-                            `🔑 Code: *${code}*\n` +
-                            `💾 Storage: ${dbType === 'local' ? '📁 Local' : `💾 ${dbType.toUpperCase()}`}\n\n` +
-                            `📌 *Instructions:*\n` +
-                            `1. Open WhatsApp Settings\n` +
-                            `2. Linked Devices > Link with Phone Number\n` +
-                            `3. Enter the code above`;
-
-                        await sock.sendMessage(chatId, { text: pairingText }, { quoted: message });
-                    } catch (err) {
-                        console.error("Pairing Error:", err);
-                        await sock.sendMessage(chatId, { text: "❌ Failed to request code." });
-                    }
-                }
-
-                conn.ev.on('creds.update', async () => {
-                    await saveCreds();
-                    await saveCloneToMainDB(authId, userNumber, dbUrl || 'local', dbType, 'active');
-                });
-
-                conn.ev.on('connection.update', async (update) => {
-                    const { connection, lastDisconnect } = update;
-                    
-                    if (connection === 'open') {
-                        global.conns.push(conn);
-                        await saveCloneToMainDB(authId, userNumber, dbUrl || 'local', dbType, 'online');
-                        
+            try {
+                const { pairingCode } = await startClone(
+                    sessionPath,
+                    userNumber,
+                    authId,
+                    dbType,
+                    dbUrl,
+                    expiryDays,
+                    async (_conn, _authId, _userNumber) => {
                         await sock.sendMessage(chatId, {
-                            text: `✅ *Clone connected!*\n\n📱 \`${userNumber}\`\n💾 ${dbType === 'local' ? '📁 Local' : `💾 ${dbType.toUpperCase()}`}`
+                            text: `✅ *Clone connected!*\n\n📱 \`${userNumber}\`\n💾 ${dbType === 'local' ? '📁 Local' : `💾 ${dbType.toUpperCase()}`}\n${expiryText}`
                         }, { quoted: message });
+                    },
+                    async (_conn, _authId, _userNumber) => {
+                        // Gérer la déconnexion si nécessaire
                     }
+                );
 
-                    if (connection === 'close') {
-                        const code = lastDisconnect?.error?.output?.statusCode;
-                        if (code !== DisconnectReason.loggedOut) {
-                            setTimeout(startClone, 5000);
-                        } else {
-                            await saveCloneToMainDB(authId, userNumber, dbUrl || 'local', dbType, 'offline');
-                            const index = global.conns.indexOf(conn);
-                            if (index > -1) global.conns.splice(index, 1);
-                        }
-                    }
-                });
+                if (pairingCode) {
+                    const expiryInfo = expiryDays ? `\n⏳ *Validity:* ${expiryDays} days` : '\n♾️ *Validity:* No expiry';
+                    const pairingText = `🔐 *PAIRING CODE*\n\n` +
+                        `📱 Number: \`${userNumber}\`\n` +
+                        `🔑 Code: *${pairingCode}*\n` +
+                        `💾 Storage: ${dbType === 'local' ? '📁 Local' : `💾 ${dbType.toUpperCase()}`}\n` +
+                        `${expiryInfo}\n\n` +
+                        '📌 *Instructions:*\n' +
+                        '1. Open WhatsApp Settings\n' +
+                        '2. Linked Devices > Link with Phone Number\n' +
+                        '3. Enter the code above\n\n' +
+                        '🔒 *This clone is isolated from others*\n' +
+                        `🆔 *ID:* ${authId}`;
 
-                try {
-                    const { handleMessages } = await import('../lib/messageHandler.js');
-                    conn.ev.on('messages.upsert', async (chatUpdate) => {
-                        await handleMessages(conn, chatUpdate);
-                    });
-                } catch (e) {
-                    console.error("Handler linkage failed:", e.message);
+                    await sock.sendMessage(chatId, { text: pairingText }, { quoted: message });
                 }
 
-                return conn;
+            } catch (error) {
+                await sock.sendMessage(chatId, {
+                    text: `❌ *Failed to start clone:* ${error.message}`
+                }, { quoted: message });
             }
 
-            await startClone();
             return;
         }
 
@@ -500,15 +404,19 @@ export default {
         // HELP
         // ============================================================
         return await sock.sendMessage(chatId, {
-            text: `*🤖 CLONE BOT SYSTEM*\n\n` +
-                  `📌 *Commands:*\n\n` +
-                  `🟢 *CREATE:*\n` +
-                  `\`.rentbot create 23765976XXXX\` (local)\n` +
-                  `\`.rentbot create 23765976XXXX mongodb://...\`\n\n` +
-                  `📋 *LIST:*\n` +
-                  `\`.rentbot list\`\n\n` +
-                  `🗑️ *DELETE:*\n` +
-                  `\`.rentbot delete 23765976XXXX\``
+            text: '🤖 *CLONE BOT SYSTEM*\n\n' +
+                  '🔒 *Owner only - Clones cannot create other clones*\n\n' +
+                  '📌 *Commands:*\n\n' +
+                  '🟢 *CREATE:*\n' +
+                  '`.rentbot create 23765976XXXX` - No expiry\n' +
+                  '`.rentbot create 23765976XXXX 30` - 30 days\n' +
+                  '`.rentbot create 23765976XXXX mongodb://... 15` - 15 days with DB\n\n' +
+                  '📋 *LIST:*\n' +
+                  '`.rentbot list`\n\n' +
+                  '🗑️ *DELETE:*\n' +
+                  '`.rentbot delete 23765976XXXX`\n\n' +
+                  '🧹 *CLEAN:*\n' +
+                  '`.rentbot clean` - Remove expired clones'
         }, { quoted: message });
     }
 };

@@ -4,6 +4,7 @@ import { dataFile } from '../lib/paths.js';
 import store from '../lib/lightweight_store.js';
 import chatbotService from '../lib/chatbotService.js';
 import chatbotConfig from '../lib/chatbotConfig.js';
+import isOwnerOrSudo from '../lib/isOwner.js';
 
 
 const MONGO_URL = process.env.MONGO_URL;
@@ -61,9 +62,9 @@ export async function handleChatbotResponse(sock, chatId, message, userMessage, 
         const botNumber = botId?.split(':')[0] || '';
 
         // Vérifier les permissions selon le mode
-        const isOwnerOrSudo = await isOwnerOrSudo(senderId, sock, chatId);
+        const senderIsOwnerOrSudo = await isOwnerOrSudo(senderId, sock, chatId);
         const isFromMe = message.key.fromMe;
-        const isOwnerOrSudoCheck = isFromMe || isOwnerOrSudo;
+        const isOwnerOrSudoCheck = isFromMe || senderIsOwnerOrSudo;
 
         const botMode = await store.getBotMode();
         const chatbotMode = chatbotConfig.get('mode') || 'private';
@@ -89,7 +90,10 @@ export async function handleChatbotResponse(sock, chatId, message, userMessage, 
         if (!canUseChatbot) return;
 
         // === VÉRIFIER SI LE MESSAGE EST ADRESSÉ AU BOT ===
-        const isAddressed = new RegExp(`^${botName}\\s+|^@${botNumber}\\s+`, 'i').test(userMessage);
+        // En DM (chat privé), la conversation est déjà 1-à-1 avec le bot :
+        // pas besoin de dire "NOVA" à chaque message.
+        const isDM = !chatId.endsWith('@g.us');
+        const isAddressed = isDM || new RegExp(`^${botName}\\s+|^@${botNumber}\\s+`, 'i').test(userMessage);
         const isReplyToBot = message.message?.extendedTextMessage?.contextInfo?.participant?.includes(botNumber);
 
         if (!isAddressed && !isReplyToBot) return;
@@ -160,9 +164,8 @@ export default {
     command: 'chatbot',
     aliases: ['bot', 'ai'],
     category: 'admin',
-    description: 'Enable or disable AI chatbot for the group',
+    description: 'Enable or disable AI chatbot for this chat (group or DM)',
     usage: '.chatbot <on|off>',
-    groupOnly: true,
     adminOnly: true,
     async handler(sock, message, args, context) {
         const chatId = context.chatId || message.key.remoteJid;
@@ -175,9 +178,10 @@ export default {
                     '• `.chatbot on` - Enable chatbot\n' +
                     '• `.chatbot off` - Disable chatbot\n\n' +
                     '*How to use:*\n' +
-                    '• Mention me: *@NOVA get pp @user*\n' +
+                    '• Say my name: *NOVA get pp @user*\n' +
                     '• Reply to my messages\n' +
-                    '• Just say: *NOVA ping*',
+                    '• Just say: *NOVA ping* (case doesn\'t matter — nova, Nova, NOVA all work)\n' +
+                    '• In DM (private chat), just talk to me directly, no need to say NOVA',
                 quoted: message
             });
         }
@@ -194,7 +198,7 @@ export default {
             data.chatbot[chatId] = true;
             await saveUserGroupData(data);
             return sock.sendMessage(chatId, {
-                text: '✅ *Chatbot enabled!*\n\nMention me: *@NOVA get pp @user*',
+                text: '✅ *Chatbot enabled!*\n\nSay my name: *NOVA get pp @user*',
                 quoted: message
             });
         }
