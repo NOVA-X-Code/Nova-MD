@@ -147,41 +147,7 @@ function ensureSessionDirectory() {
 }
 
 function hasValidSession() {
-   try {
-        const credsPath = path.join(__dirname, 'session', 'creds.json');
-        if (!existsSync(credsPath))
-            return false;
-        const fileContent = fs.readFileSync(credsPath, 'utf8');
-        if (!fileContent || fileContent.trim().length === 0) {
-            printLog('warning', 'creds.json exists but is empty');
-            return false;
-        }
-        try {
-            const creds = JSON.parse(fileContent);
-            if (!creds.noiseKey || !creds.signedIdentityKey || !creds.signedPreKey) {
-                printLog('warning', 'creds.json is missing required fields');
-                return false;
-            }
-            if (creds.registered === false) {
-                printLog('warning', 'Session not registered. Clearing for fresh pairing...');
-                try {
-                    rmSync(path.join(__dirname, 'session'), { recursive: true, force: true });
-                }
-                catch (_e) { /* ignore */ }
-                return false;
-            }
-            printLog('success', 'Valid and registered session credentials found');
-            return true;
-        }
-        catch (_parseError) {
-            printLog('warning', 'creds.json contains invalid JSON');
-            return false;
-        }
-    }
-    catch (error) {
-        printLog('error', `Error checking session validity: ${error.message}`);
-        return false;
-    }
+  return sessionManager.hasValidSession();
 }
 
 server.listen(PORT, () => {
