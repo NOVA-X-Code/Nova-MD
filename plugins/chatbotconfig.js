@@ -6,7 +6,7 @@ export default {
     command: 'chatbotconfig',
     aliases: ['cbc', 'chbconfig', 'botconfig'],
     category: 'owner',
-    description: 'Configure the chatbot',
+    description: 'Configure the chatbot (provider, mode, API key, context, etc.)',
     usage: '.chatbotconfig [option] [value]',
     ownerOnly: true,
     handler: async (sock, message, args, context) => {
@@ -20,17 +20,17 @@ export default {
         const option = args[0]?.toLowerCase();
         const value = args.slice(1).join(' ');
 
-        // === DISPLAY CONFIGURATION ===
+        // === AFFICHER LA CONFIGURATION ===
         if (!option || option === 'status' || option === 'info') {
             const config = chatbotConfig.config;
             const status = chatbotConfig.getStatus();
             
             let text = `🤖 *CHATBOT CONFIGURATION*\n\n`;
             text += `┌─────────────────────────\n`;
-            text += `│ 📊 Status: ${status.enabled} ${config.enabled ? 'Enabled' : 'Disabled'}\n`;
+            text += `│ 📊 Status: ${status.enabled} ${config.enabled ? '✅ Enabled' : '❌ Disabled'}\n`;
             text += `│ 🔒 Mode: ${status.mode}\n`;
             text += `│ 🔌 Provider: ${status.provider}\n`;
-            text += `│ ${config.apiKey ? '✅' : '❌'} API key: ${config.apiKey ? 'Configured' : 'NOT SET — chatbot won\'t respond'}\n`;
+            text += `│ ${config.apiKey ? '✅' : '❌'} API Key: ${config.apiKey ? 'Configured' : '⚠️ NOT SET — chatbot won\'t respond'}\n`;
             text += `│ ${config.apiUrl ? '✅' : '❌'} URL: ${config.apiUrl || 'Not configured'}\n`;
             text += `│ 📚 Context: ${config.customContext ? '✅ Custom' : '❌ Default'}\n`;
             text += `│ 🔄 History: ${config.maxHistory} messages\n`;
@@ -39,25 +39,38 @@ export default {
             text += `└─────────────────────────\n\n`;
 
             if (!config.apiKey) {
-                text += `⚠️ *An API key is required.* The chatbot will not answer anyone until you run \`.cbc apikey <your_key>\`.\n\n`;
+                text += `⚠️ *An API key is required!* The chatbot will not answer until you run:\n`;
+                text += `\`\`\`\n.cbc apikey <your_key>\n\`\`\`\n\n`;
             }
 
-            text += `*📋 Available commands:*\n`;
-            text += `• \`.cbc provider <puter|pollinations|gemini|ngrok|openai|custom>\`\n`;
-            text += `• \`.cbc apikey <your_api_key>\` _(required — for puter: your Puter auth token)_\n`;
+            text += `*📋 Providers available:*\n`;
+            text += `• \`grok\` - xAI (Grok) — *recommended*\n`;
+            text += `• \`puter\` - Puter (free, needs account)\n`;
+            text += `• \`pollinations\` - Free, no key needed\n`;
+            text += `• \`gemini\` - Google Gemini\n`;
+            text += `• \`openai\` - OpenAI\n`;
+            text += `• \`custom\` - Custom API\n\n`;
+
+            text += `*📋 Chatbot Mode:*\n`;
+            text += `• \`public\` - Everyone can use the chatbot\n`;
+            text += `• \`private\` - Only the owner can use the chatbot\n\n`;
+
+            text += `*📋 Commands:*\n`;
+            text += `• \`.cbc provider <grok|puter|pollinations|gemini|openai|custom>\`\n`;
+            text += `• \`.cbc apikey <your_api_key>\` _(required!)_\n`;
             text += `• \`.cbc apiurl <your_api_url>\`\n`;
             text += `• \`.cbc mode <public|private>\`\n`;
             text += `• \`.cbc context <your_context>\`\n`;
             text += `• \`.cbc enable|disable\`\n`;
             text += `• \`.cbc clearhistory\`\n`;
+            text += `• \`.cbc reset\`\n`;
             text += `• \`.cbc status\`\n\n`;
             
             text += `💡 *Examples:*\n`;
-            text += `• \`.cbc apikey your_puter_auth_token\` _(required first!)_\n`;
-            text += `• \`.cbc provider puter\` _(default — free, needs a Puter account token)_\n`;
-            text += `• \`.cbc provider gemini\`\n`;
+            text += `• \`.cbc apikey gsk_xxxxxxxx\` _(Grok key)_\n`;
+            text += `• \`.cbc provider grok\`\n`;
             text += `• \`.cbc mode public\`\n`;
-            text += `• \`.cbc context I am a commercial assistant...\``;
+            text += `• \`.cbc context You are a helpful assistant...\``;
 
             return await sock.sendMessage(chatId, { text }, { quoted: message });
         }
@@ -65,8 +78,9 @@ export default {
         // === CONFIGURATION ===
         try {
             switch (option) {
+                // --- PROVIDER ---
                 case 'provider': {
-                    const providers = ['puter', 'pollinations', 'gemini', 'ngrok', 'openai', 'custom'];
+                    const providers = ['grok', 'puter', 'pollinations', 'gemini', 'openai', 'custom'];
                     if (!providers.includes(value)) {
                         return await sock.sendMessage(chatId, {
                             text: `❌ Invalid provider. Choose: ${providers.join(', ')}`,
@@ -75,12 +89,13 @@ export default {
                     }
                     chatbotConfig.set('provider', value);
                     await sock.sendMessage(chatId, {
-                        text: `✅ Provider changed: ${value.toUpperCase()}`,
+                        text: `✅ Provider changed to: *${value.toUpperCase()}*`,
                         quoted: message
                     });
                     break;
                 }
 
+                // --- API KEY ---
                 case 'apikey':
                     if (!value) {
                         return await sock.sendMessage(chatId, {
@@ -90,11 +105,12 @@ export default {
                     }
                     chatbotConfig.set('apiKey', value);
                     await sock.sendMessage(chatId, {
-                        text: `✅ API key updated (${value.slice(0, 5)}...)`,
+                        text: `✅ API key updated (${value.slice(0, 8)}...)`,
                         quoted: message
                     });
                     break;
 
+                // --- API URL ---
                 case 'apiurl':
                     if (!value) {
                         return await sock.sendMessage(chatId, {
@@ -109,20 +125,22 @@ export default {
                     });
                     break;
 
+                // --- MODE (public/private) ---
                 case 'mode':
                     if (!['public', 'private'].includes(value)) {
                         return await sock.sendMessage(chatId, {
-                            text: '❌ Invalid mode. Use: public or private',
+                            text: '❌ Invalid mode. Use: `public` or `private`',
                             quoted: message
                         });
                     }
                     chatbotConfig.set('mode', value);
                     await sock.sendMessage(chatId, {
-                        text: `🔒 Chatbot mode: ${value === 'private' ? '🔒 Private' : '🌍 Public'}`,
+                        text: `🔒 Chatbot mode: ${value === 'private' ? '🔒 Private (owner only)' : '🌍 Public (everyone)'}`,
                         quoted: message
                     });
                     break;
 
+                // --- CONTEXT ---
                 case 'context':
                     if (!value) {
                         return await sock.sendMessage(chatId, {
@@ -138,6 +156,7 @@ export default {
                     });
                     break;
 
+                // --- ENABLE ---
                 case 'enable':
                     chatbotConfig.set('enabled', true);
                     await sock.sendMessage(chatId, {
@@ -146,6 +165,7 @@ export default {
                     });
                     break;
 
+                // --- DISABLE ---
                 case 'disable':
                     chatbotConfig.set('enabled', false);
                     await sock.sendMessage(chatId, {
@@ -154,16 +174,21 @@ export default {
                     });
                     break;
 
+                // --- CLEAR HISTORY ---
                 case 'clearhistory':
+                case 'clear':
                     chatbotService.clearHistory();
                     await sock.sendMessage(chatId, {
-                        text: '🗑️ History cleared',
+                        text: '🗑️ Chat history cleared',
                         quoted: message
                     });
                     break;
 
+                // --- RESET ---
                 case 'reset':
                     chatbotConfig.set('customContext', '');
+                    chatbotConfig.set('temperature', 0.7);
+                    chatbotConfig.set('maxTokens', 1024);
                     chatbotService.clearHistory();
                     await sock.sendMessage(chatId, {
                         text: '🔄 Chatbot reset to default settings',
@@ -171,9 +196,71 @@ export default {
                     });
                     break;
 
+                // --- TEMPERATURE ---
+                case 'temp':
+                case 'temperature':
+                    if (!value || isNaN(value)) {
+                        return await sock.sendMessage(chatId, {
+                            text: '❌ Please provide a number between 0 and 1 (e.g., 0.7)',
+                            quoted: message
+                        });
+                    }
+                    const temp = parseFloat(value);
+                    if (temp < 0 || temp > 1) {
+                        return await sock.sendMessage(chatId, {
+                            text: '❌ Temperature must be between 0 and 1',
+                            quoted: message
+                        });
+                    }
+                    chatbotConfig.set('temperature', temp);
+                    await sock.sendMessage(chatId, {
+                        text: `🌡️ Temperature set to: ${temp}`,
+                        quoted: message
+                    });
+                    break;
+
+                // --- MAX TOKENS ---
+                case 'maxtokens':
+                case 'tokens':
+                    if (!value || isNaN(value)) {
+                        return await sock.sendMessage(chatId, {
+                            text: '❌ Please provide a number (e.g., 1024)',
+                            quoted: message
+                        });
+                    }
+                    const tokens = parseInt(value);
+                    if (tokens < 50 || tokens > 4096) {
+                        return await sock.sendMessage(chatId, {
+                            text: '❌ Max tokens must be between 50 and 4096',
+                            quoted: message
+                        });
+                    }
+                    chatbotConfig.set('maxTokens', tokens);
+                    await sock.sendMessage(chatId, {
+                        text: `✅ Max tokens set to: ${tokens}`,
+                        quoted: message
+                    });
+                    break;
+
+                // --- GROK MODEL ---
+                case 'grokmodel':
+                case 'model':
+                    if (!value) {
+                        return await sock.sendMessage(chatId, {
+                            text: '❌ Please provide a model name (e.g., grok-1, grok-2-latest)',
+                            quoted: message
+                        });
+                    }
+                    chatbotConfig.set('grokModel', value);
+                    await sock.sendMessage(chatId, {
+                        text: `✅ Grok model set to: ${value}`,
+                        quoted: message
+                    });
+                    break;
+
                 default:
                     await sock.sendMessage(chatId, {
-                        text: `❌ Unknown option: ${option}\nUse \`.cbc status\` to see options`,
+                        text: `❌ Unknown option: *${option}*\n\nUse \`.cbc status\` to see all options.`,
                         quoted: message
                     });
             }

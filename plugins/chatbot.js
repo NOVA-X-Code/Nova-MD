@@ -1,229 +1,279 @@
-import fs from 'fs';
-import path from 'path';
-import { dataFile } from '../lib/paths.js';
-import store from '../lib/lightweight_store.js';
 import chatbotService from '../lib/chatbotService.js';
 import chatbotConfig from '../lib/chatbotConfig.js';
-import isOwnerOrSudo from '../lib/isOwner.js';
+import { isOwnerOnly } from '../lib/isOwner.js';
 
-
-const MONGO_URL = process.env.MONGO_URL;
-const POSTGRES_URL = process.env.POSTGRES_URL;
-const MYSQL_URL = process.env.MYSQL_URL;
-const SQLITE_URL = process.env.DB_URL;
-const HAS_DB = !!(MONGO_URL || POSTGRES_URL || MYSQL_URL || SQLITE_URL);
-const USER_GROUP_DATA = dataFile('userGroupData.json');
-
-// 📂 Charger les données utilisateur/groupe
-export async function loadUserGroupData() {
-    try {
-        if (HAS_DB) {
-            const data = await store.getSetting('global', 'userGroupData');
-            return data || { groups: [], chatbot: {} };
-        }
-        if (!fs.existsSync(USER_GROUP_DATA)) {
-            return { groups: [], chatbot: {} };
-        }
-        return JSON.parse(fs.readFileSync(USER_GROUP_DATA, 'utf-8'));
-    } catch (error) {
-        console.error('Error loading user group data:', error.message);
-        return { groups: [], chatbot: {} };
-    }
-}
-
-// 💾 Sauvegarder les données utilisateur/groupe
-export async function saveUserGroupData(data) {
-    try {
-        if (HAS_DB) {
-            await store.saveSetting('global', 'userGroupData', data);
-        } else {
-            const dataDir = path.dirname(USER_GROUP_DATA);
-            if (!fs.existsSync(dataDir)) {
-                fs.mkdirSync(dataDir, { recursive: true });
-            }
-            fs.writeFileSync(USER_GROUP_DATA, JSON.stringify(data, null, 2));
-        }
-    } catch (error) {
-        console.error('Error saving user group data:', error.message);
-    }
-}
-
-// 🤖 Fonction principale du chatbot
-export async function handleChatbotResponse(sock, chatId, message, userMessage, senderId) {
-    // Vérifier si le chatbot est activé
-    if (!chatbotConfig.get('enabled')) return;
-
-    const data = await loadUserGroupData();
-    if (!data.chatbot[chatId]) return;
-
-    try {
-        const botName = global.botname || 'NOVA';
-        const botId = sock.user.id;
-        const botNumber = botId?.split(':')[0] || '';
-
-        // Vérifier les permissions selon le mode
-        const senderIsOwnerOrSudo = await isOwnerOrSudo(senderId, sock, chatId);
-        const isFromMe = message.key.fromMe;
-        const isOwnerOrSudoCheck = isFromMe || senderIsOwnerOrSudo;
-
-        const botMode = await store.getBotMode();
-        const chatbotMode = chatbotConfig.get('mode') || 'private';
-
-        // Mode privé: seul le propriétaire peut utiliser
-        if (chatbotMode === 'private' && !isOwnerOrSudoCheck) {
-            return;
-        }
-
-        // Vérifier le botMode global
-        const canUseChatbot = (() => {
-            if (isOwnerOrSudoCheck) return true;
-            switch (botMode) {
-                case 'public': return true;
-                case 'private':
-                case 'self': return false;
-                case 'groups': return chatId.endsWith('@g.us');
-                case 'inbox': return !chatId.endsWith('@g.us');
-                default: return true;
-            }
-        })();
-
-        if (!canUseChatbot) return;
-
-        // === VÉRIFIER SI LE MESSAGE EST ADRESSÉ AU BOT ===
-        // En DM (chat privé), la conversation est déjà 1-à-1 avec le bot :
-        // pas besoin de dire "NOVA" à chaque message.
-        const isDM = !chatId.endsWith('@g.us');
-        const isAddressed = isDM || new RegExp(`^${botName}\\s+|^@${botNumber}\\s+`, 'i').test(userMessage);
-        const isReplyToBot = message.message?.extendedTextMessage?.contextInfo?.participant?.includes(botNumber);
-
-        if (!isAddressed && !isReplyToBot) return;
-
-        // Nettoyer le message
-        let cleanMessage = userMessage;
-        const patterns = [
-            new RegExp(`^${botName}\\s+`, 'i'),
-            new RegExp(`^@${botNumber}\\s+`, 'i'),
-            new RegExp(`^${botName}[:]\\s+`, 'i'),
-            new RegExp(`^@${botNumber}[:]\\s+`, 'i')
-        ];
-        for (const pattern of patterns) {
-            if (pattern.test(cleanMessage)) {
-                cleanMessage = cleanMessage.replace(pattern, '').trim();
-                break;
-            }
-        }
-
-        if (isReplyToBot && !isAddressed) {
-            cleanMessage = userMessage;
-        }
-
-        // Si le message est vide, retourner
-        if (!cleanMessage || cleanMessage.length < 1) {
-            return;
-        }
-
-        // === UTILISER LE SERVICE CHATBOT ===
-        // Le chatbotService gère tout :
-        // - Détection des commandes
-        // - Exécution des commandes
-        // - Génération de réponses IA
-        // - Historique
-        // - Contextes
-        await sock.sendPresenceUpdate('composing', chatId);
-        await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 1500));
-
-        const response = await chatbotService.getResponse(
-            cleanMessage,
-            chatId,
-            senderId,
-            {
-                sock,
-                senderId,
-                chatId,
-                isOwnerOrSudo: isOwnerOrSudoCheck,
-                isFromMe,
-                pushName: message.pushName,
-                timestamp: Date.now()
-            }
-        );
-
-        if (response) {
-            const prefix = chatbotConfig.get('responsePrefix') || '🤖 ';
-            await sock.sendMessage(chatId, {
-                text: `${prefix}${response}`
-            }, { quoted: message });
-        }
-
-    } catch (error) {
-        console.error('Error in chatbot response:', error.message);
-    }
-}
-
-// 📋 Commande chatbot
 export default {
-    command: 'chatbot',
-    aliases: ['bot', 'ai'],
-    category: 'admin',
-    description: 'Enable or disable AI chatbot for this chat (group or DM)',
-    usage: '.chatbot <on|off>',
-    adminOnly: true,
-    async handler(sock, message, args, context) {
+    command: 'chatbotconfig',
+    aliases: ['cbc', 'chbconfig', 'botconfig'],
+    category: 'owner',
+    description: 'Configure the chatbot (provider, mode, API key, context, etc.)',
+    usage: '.chatbotconfig [option] [value]',
+    ownerOnly: true,
+    handler: async (sock, message, args, context) => {
         const chatId = context.chatId || message.key.remoteJid;
-        const match = args.join(' ').toLowerCase();
-
-        if (!match) {
-            return sock.sendMessage(chatId, {
-                text: '*🤖 CHATBOT SETUP*\n\n' +
-                    '*Commands:*\n' +
-                    '• `.chatbot on` - Enable chatbot\n' +
-                    '• `.chatbot off` - Disable chatbot\n\n' +
-                    '*How to use:*\n' +
-                    '• Say my name: *NOVA get pp @user*\n' +
-                    '• Reply to my messages\n' +
-                    '• Just say: *NOVA ping* (case doesn\'t matter — nova, Nova, NOVA all work)\n' +
-                    '• In DM (private chat), just talk to me directly, no need to say NOVA',
-                quoted: message
-            });
+        const isOwner = await isOwnerOnly(message.key.participant || message.key.remoteJid);
+        
+        if (!isOwner && !message.key.fromMe) {
+            return;
         }
 
-        const data = await loadUserGroupData();
+        const option = args[0]?.toLowerCase();
+        const value = args.slice(1).join(' ');
 
-        if (match === 'on') {
-            if (data.chatbot[chatId]) {
-                return sock.sendMessage(chatId, {
-                    text: '⚠️ *Chatbot is already enabled*',
-                    quoted: message
-                });
+        // === AFFICHER LA CONFIGURATION ===
+        if (!option || option === 'status' || option === 'info') {
+            const config = chatbotConfig.config;
+            const status = chatbotConfig.getStatus();
+            
+            let text = `🤖 *CHATBOT CONFIGURATION*\n\n`;
+            text += `┌─────────────────────────\n`;
+            text += `│ 📊 Status: ${status.enabled} ${config.enabled ? '✅ Enabled' : '❌ Disabled'}\n`;
+            text += `│ 🔒 Mode: ${status.mode}\n`;
+            text += `│ 🔌 Provider: ${status.provider}\n`;
+            text += `│ ${config.apiKey ? '✅' : '❌'} API Key: ${config.apiKey ? 'Configured' : '⚠️ NOT SET — chatbot won\'t respond'}\n`;
+            text += `│ ${config.apiUrl ? '✅' : '❌'} URL: ${config.apiUrl || 'Not configured'}\n`;
+            text += `│ 📚 Context: ${config.customContext ? '✅ Custom' : '❌ Default'}\n`;
+            text += `│ 🔄 History: ${config.maxHistory} messages\n`;
+            text += `│ 🌡️ Temperature: ${config.temperature}\n`;
+            text += `│ ⚡ Commands: ${config.executeCommands ? '✅ Enabled' : '❌ Disabled'}\n`;
+            text += `└─────────────────────────\n\n`;
+
+            if (!config.apiKey) {
+                text += `⚠️ *An API key is required!* The chatbot will not answer until you run:\n`;
+                text += `\`\`\`\n.cbc apikey <your_key>\n\`\`\`\n\n`;
             }
-            data.chatbot[chatId] = true;
-            await saveUserGroupData(data);
-            return sock.sendMessage(chatId, {
-                text: '✅ *Chatbot enabled!*\n\nSay my name: *NOVA get pp @user*',
-                quoted: message
-            });
+
+            text += `*📋 Providers available:*\n`;
+            text += `• \`grok\` - xAI (Grok) — *recommended*\n`;
+            text += `• \`puter\` - Puter (free, needs account)\n`;
+            text += `• \`pollinations\` - Free, no key needed\n`;
+            text += `• \`gemini\` - Google Gemini\n`;
+            text += `• \`openai\` - OpenAI\n`;
+            text += `• \`custom\` - Custom API\n\n`;
+
+            text += `*📋 Chatbot Mode:*\n`;
+            text += `• \`public\` - Everyone can use the chatbot\n`;
+            text += `• \`private\` - Only the owner can use the chatbot\n\n`;
+
+            text += `*📋 Commands:*\n`;
+            text += `• \`.cbc provider <grok|puter|pollinations|gemini|openai|custom>\`\n`;
+            text += `• \`.cbc apikey <your_api_key>\` _(required!)_\n`;
+            text += `• \`.cbc apiurl <your_api_url>\`\n`;
+            text += `• \`.cbc mode <public|private>\`\n`;
+            text += `• \`.cbc context <your_context>\`\n`;
+            text += `• \`.cbc enable|disable\`\n`;
+            text += `• \`.cbc clearhistory\`\n`;
+            text += `• \`.cbc temp <0-1>\`\n`;
+            text += `• \`.cbc maxtokens <50-4096>\`\n`;
+            text += `• \`.cbc grokmodel <model>\`\n`;
+            text += `• \`.cbc reset\`\n`;
+            text += `• \`.cbc status\`\n\n`;
+            
+            text += `💡 *Examples:*\n`;
+            text += `• \`.cbc apikey gsk_xxxxxxxx\` _(Grok key)_\n`;
+            text += `• \`.cbc provider grok\`\n`;
+            text += `• \`.cbc mode public\`\n`;
+            text += `• \`.cbc context You are a helpful assistant...\``;
+
+            return await sock.sendMessage(chatId, { text }, { quoted: message });
         }
 
-        if (match === 'off') {
-            if (!data.chatbot[chatId]) {
-                return sock.sendMessage(chatId, {
-                    text: '⚠️ *Chatbot is already disabled*',
-                    quoted: message
-                });
+        // === CONFIGURATION ===
+        try {
+            switch (option) {
+                // --- PROVIDER ---
+                case 'provider': {
+                    const providers = ['grok', 'puter', 'pollinations', 'gemini', 'openai', 'custom'];
+                    if (!providers.includes(value)) {
+                        return await sock.sendMessage(chatId, {
+                            text: `❌ Invalid provider. Choose: ${providers.join(', ')}`,
+                            quoted: message
+                        });
+                    }
+                    chatbotConfig.set('provider', value);
+                    await sock.sendMessage(chatId, {
+                        text: `✅ Provider changed to: *${value.toUpperCase()}*`,
+                        quoted: message
+                    });
+                    break;
+                }
+
+                // --- API KEY ---
+                case 'apikey':
+                    if (!value) {
+                        return await sock.sendMessage(chatId, {
+                            text: '❌ Please provide an API key',
+                            quoted: message
+                        });
+                    }
+                    chatbotConfig.set('apiKey', value);
+                    await sock.sendMessage(chatId, {
+                        text: `✅ API key updated (${value.slice(0, 8)}...)`,
+                        quoted: message
+                    });
+                    break;
+
+                // --- API URL ---
+                case 'apiurl':
+                    if (!value) {
+                        return await sock.sendMessage(chatId, {
+                            text: '❌ Please provide an API URL',
+                            quoted: message
+                        });
+                    }
+                    chatbotConfig.set('apiUrl', value);
+                    await sock.sendMessage(chatId, {
+                        text: `✅ API URL updated: ${value}`,
+                        quoted: message
+                    });
+                    break;
+
+                // --- MODE (public/private) ---
+                case 'mode':
+                    if (!['public', 'private'].includes(value)) {
+                        return await sock.sendMessage(chatId, {
+                            text: '❌ Invalid mode. Use: `public` or `private`',
+                            quoted: message
+                        });
+                    }
+                    chatbotConfig.set('mode', value);
+                    await sock.sendMessage(chatId, {
+                        text: `🔒 Chatbot mode: ${value === 'private' ? '🔒 Private (owner only)' : '🌍 Public (everyone)'}`,
+                        quoted: message
+                    });
+                    break;
+
+                // --- CONTEXT ---
+                case 'context':
+                    if (!value) {
+                        return await sock.sendMessage(chatId, {
+                            text: '❌ Please provide a context',
+                            quoted: message
+                        });
+                    }
+                    chatbotConfig.set('customContext', value);
+                    chatbotService.setContext(null, value);
+                    await sock.sendMessage(chatId, {
+                        text: `✅ Custom context added (${value.length} characters)`,
+                        quoted: message
+                    });
+                    break;
+
+                // --- ENABLE ---
+                case 'enable':
+                    chatbotConfig.set('enabled', true);
+                    await sock.sendMessage(chatId, {
+                        text: '✅ Chatbot enabled!',
+                        quoted: message
+                    });
+                    break;
+
+                // --- DISABLE ---
+                case 'disable':
+                    chatbotConfig.set('enabled', false);
+                    await sock.sendMessage(chatId, {
+                        text: '❌ Chatbot disabled',
+                        quoted: message
+                    });
+                    break;
+
+                // --- CLEAR HISTORY ---
+                case 'clearhistory':
+                case 'clear':
+                    chatbotService.clearHistory();
+                    await sock.sendMessage(chatId, {
+                        text: '🗑️ Chat history cleared',
+                        quoted: message
+                    });
+                    break;
+
+                // --- TEMPERATURE ---
+                case 'temp':
+                case 'temperature':
+                    if (!value || isNaN(value)) {
+                        return await sock.sendMessage(chatId, {
+                            text: '❌ Please provide a number between 0 and 1 (e.g., 0.7)',
+                            quoted: message
+                        });
+                    }
+                    const temp = parseFloat(value);
+                    if (temp < 0 || temp > 1) {
+                        return await sock.sendMessage(chatId, {
+                            text: '❌ Temperature must be between 0 and 1',
+                            quoted: message
+                        });
+                    }
+                    chatbotConfig.set('temperature', temp);
+                    await sock.sendMessage(chatId, {
+                        text: `🌡️ Temperature set to: ${temp}`,
+                        quoted: message
+                    });
+                    break;
+
+                // --- MAX TOKENS ---
+                case 'maxtokens':
+                case 'tokens':
+                    if (!value || isNaN(value)) {
+                        return await sock.sendMessage(chatId, {
+                            text: '❌ Please provide a number (e.g., 1024)',
+                            quoted: message
+                        });
+                    }
+                    const tokens = parseInt(value);
+                    if (tokens < 50 || tokens > 4096) {
+                        return await sock.sendMessage(chatId, {
+                            text: '❌ Max tokens must be between 50 and 4096',
+                            quoted: message
+                        });
+                    }
+                    chatbotConfig.set('maxTokens', tokens);
+                    await sock.sendMessage(chatId, {
+                        text: `✅ Max tokens set to: ${tokens}`,
+                        quoted: message
+                    });
+                    break;
+
+                // --- GROK MODEL ---
+                case 'grokmodel':
+                case 'model':
+                    if (!value) {
+                        return await sock.sendMessage(chatId, {
+                            text: '❌ Please provide a model name (e.g., grok-1, grok-2-latest)',
+                            quoted: message
+                        });
+                    }
+                    chatbotConfig.set('grokModel', value);
+                    await sock.sendMessage(chatId, {
+                        text: `✅ Grok model set to: ${value}`,
+                        quoted: message
+                    });
+                    break;
+
+                // --- RESET ---
+                case 'reset':
+                    chatbotConfig.set('customContext', '');
+                    chatbotConfig.set('temperature', 0.7);
+                    chatbotConfig.set('maxTokens', 1024);
+                    chatbotConfig.set('grokModel', 'grok-1');
+                    chatbotService.clearHistory();
+                    await sock.sendMessage(chatId, {
+                        text: '🔄 Chatbot reset to default settings',
+                        quoted: message
+                    });
+                    break;
+
+                default:
+                    await sock.sendMessage(chatId, {
+                        text: `❌ Unknown option: *${option}*\n\nUse \`.cbc status\` to see all options.`,
+                        quoted: message
+                    });
             }
-            delete data.chatbot[chatId];
-            await saveUserGroupData(data);
-            return sock.sendMessage(chatId, {
-                text: '❌ *Chatbot disabled!*',
+        } catch (error) {
+            console.error('Chatbot config error:', error);
+            await sock.sendMessage(chatId, {
+                text: `❌ Error: ${error.message}`,
                 quoted: message
             });
         }
-
-        return sock.sendMessage(chatId, {
-            text: '❌ Use: `.chatbot on/off`',
-            quoted: message
-        });
-    },
-    handleChatbotResponse,
-    loadUserGroupData,
-    saveUserGroupData
+    }
 };

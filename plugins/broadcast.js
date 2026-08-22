@@ -45,7 +45,7 @@ export default {
                         isForwarded: true,
                         forwardedNewsletterMessageInfo: {
                             newsletterJid: '120363429019355682@newsletter',
-                            newsletterName: 'GlobalTechInc',
+                            newsletterName: 'NOVA MD',
                             serverMessageId: -1
                         }
                     }

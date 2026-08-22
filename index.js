@@ -384,6 +384,7 @@ async function startNovaXCode() {
 
       if (connection === "open") {
         printLog("success", "Bot connected successfully!");
+
         try {
           // 🔄 ENVOI AUTOMATIQUE DU PANNEAU "ABOUT" DIRECTEMENT SUR WHATSAPP
           const botMode = await store.getBotMode();
@@ -391,28 +392,90 @@ async function startNovaXCode() {
           const hours = Math.floor(uptime / 3600);
           const minutes = Math.floor((uptime % 3600) / 60);
 
-          // Construction du texte en anglais
-          let autoAboutText = `*━〔 ${config.botName || "NOVA-MD"} INFO 〕━*\n\n`;
-          autoAboutText += `🤖 *Version:* 2.5.0 (Stable)\n`;
-          autoAboutText += `⚙️ *Mode:* ${botMode.toUpperCase()}\n`;
-          autoAboutText += `⏰ *Uptime:* ${hours}h ${minutes}m\n`;
-          autoAboutText += `📊 *Prefixes:* ${config.prefixes.join(" ")}\n\n`;
-          autoAboutText += `✨ _Bot successfully paired and operational._`;
+          // Récupérer le logo
+          const LOGO_URL =
+            "https://raw.githubusercontent.com/NOVA-X-Code/Nova-MD/refs/heads/main/assets/logo.PNG";
+          let logoBuffer = null;
+
+          try {
+            const response = await fetch(LOGO_URL);
+            if (response.ok) {
+              const arrayBuffer = await response.arrayBuffer();
+              logoBuffer = Buffer.from(arrayBuffer);
+            }
+          } catch (_e) {
+            // Fallback: logo local
+            const localLogoPath = path.join(
+              process.cwd(),
+              "assets",
+              "logo.PNG",
+            );
+            if (fs.existsSync(localLogoPath)) {
+              logoBuffer = fs.readFileSync(localLogoPath);
+            }
+          }
+
+          // Construction du message en anglais avec style
+          let autoAboutText = `╭━━『 *${config.botName || "NOVA-MD"} INFO* 』━⬣\n`;
+          autoAboutText += `┃\n`;
+          autoAboutText += `┃ ✨ *Status:* ✅ ONLINE\n`;
+          autoAboutText += `┃ 🤖 *Version:* ${config.version || "2.5.0"} (Stable)\n`;
+          autoAboutText += `┃ ⚙️ *Mode:* ${botMode.toUpperCase()}\n`;
+          autoAboutText += `┃ ⏰ *Uptime:* ${hours}h ${minutes}m\n`;
+          autoAboutText += `┃ 📊 *Prefixes:* ${config.prefixes.join(" ")}\n`;
+          autoAboutText += `┃ 📦 *Plugins:* ${commandHandler.commands.size}\n`;
+          autoAboutText += `┃ 💾 *Storage:* ${store.getStats().backend.toUpperCase()}\n`;
+          autoAboutText += `┃\n`;
+          autoAboutText += `┃━━━━━━━━━━━━━━━━━━⬣\n`;
+          autoAboutText += `┃\n`;
+          autoAboutText += `┃ 🌐 *JOIN CHANNELS*\n`;
+          autoAboutText += `┃\n`;
+          autoAboutText += `┃ 💬 *FaceBook:*\n`;
+          autoAboutText += `┃ https://www.facebook.com/profile.php?id=61591828051151\n`;
+          autoAboutText += `┃\n`;
+          autoAboutText += `┃ 📱 *Telegram:*\n`;
+          autoAboutText += `┃ https://t.me/addlist/CpQzYQfWwwxmYTk0\n`;
+          autoAboutText += `┃\n`;
+          autoAboutText += `┃ ▶️ *YouTube:*\n`;
+          autoAboutText += `┃ https://youtube.com/@labokingfreesurf\n`;
+          autoAboutText += `┃\n`;
+          autoAboutText += `┃━━━━━━━━━━━━━━━━━━⬣\n`;
+          autoAboutText += `┃\n`;
+          autoAboutText += `┃ ✨ _Powered by NOSTRA._\n`;
+          autoAboutText += `╰━━━━━━━━━━━━━━⬣`;
 
           const botNumber = `${NovaXCode.user.id.split(":")[0]}@s.whatsapp.net`;
-          const localLogoPath = path.join(process.cwd(), "assets", "logo.PNG");
 
-          if (fs.existsSync(localLogoPath)) {
-            // Envoi du logo local avec le texte en description directement sur votre WhatsApp
-            const logoBuffer = fs.readFileSync(localLogoPath);
+          // Envoyer le message avec le logo
+          if (logoBuffer) {
             await NovaXCode.sendMessage(botNumber, {
               image: logoBuffer,
               caption: autoAboutText,
+              contextInfo: {
+                forwardingScore: 1,
+                isForwarded: true,
+                forwardedNewsletterMessageInfo: {
+                  newsletterJid: "120363429019355682@newsletter",
+                  newsletterName: "NOSTRA",
+                  serverMessageId: -1,
+                },
+              },
             });
           } else {
-            // Fallback en texte si jamais le fichier n'est pas trouvé
-            await NovaXCode.sendMessage(botNumber, { text: autoAboutText });
+            await NovaXCode.sendMessage(botNumber, {
+              text: autoAboutText,
+              contextInfo: {
+                forwardingScore: 1,
+                isForwarded: true,
+                forwardedNewsletterMessageInfo: {
+                  newsletterJid: "120363429019355682@newsletter",
+                  newsletterName: "NOSTRA",
+                  serverMessageId: -1,
+                },
+              },
+            });
           }
+
           printLog(
             "success",
             "📥 About message sent successfully to your WhatsApp!",
@@ -433,29 +496,6 @@ async function startNovaXCode() {
           "success",
           `Connected to => ${JSON.stringify(NovaXCode.user, null, 2)}`,
         );
-
-        try {
-          const botNumber = `${NovaXCode.user.id.split(":")[0]}@s.whatsapp.net`;
-          const ghostStatus =
-            ghostMode && ghostMode.enabled ? "\n👻 Stealth Mode: ACTIVE" : "";
-          await NovaXCode.sendMessage(botNumber, {
-            text: `🤖 Bot Connected Successfully!\n\n⏰ Time: ${new Date().toLocaleString()}\n✅ Status: Online and Ready!${ghostStatus}\n\n✅ Make sure to join below channel`,
-            contextInfo: {
-              forwardingScore: 1,
-              isForwarded: true,
-              forwardedNewsletterMessageInfo: {
-                newsletterJid: "120363429019355682@newsletter",
-                newsletterName: "NOSTRA",
-                serverMessageId: -1,
-              },
-            },
-          });
-        } catch (error) {
-          printLog(
-            "error",
-            `Failed to send connection message: ${error.message}`,
-          );
-        }
 
         await delay(1999);
         try {
@@ -497,87 +537,6 @@ async function startNovaXCode() {
         }
       }
     });
-
-    // 🔄 CORRECTION DE TIMING POUR LE QR CODE :
-    // Si le fichier d'authentification est déjà validé par le scan de l'interface web,
-    // on force manuellement le déclenchement des logs et du message de bienvenue.
-    if (state.creds && state.creds.registered === true) {
-      printLog(
-        "info",
-        "🔌 Session already registered via web. Initializing bot modules...",
-      );
-
-      // On simule manuellement l'ouverture pour l'index
-      setTimeout(async () => {
-        printLog("success", "Bot connected successfully!");
-
-        try {
-          // 🔄 ENVOI AUTOMATIQUE DU PANNEAU "ABOUT" DIRECTEMENT SUR WHATSAPP
-          const botMode = await store.getBotMode();
-          const uptime = process.uptime();
-          const hours = Math.floor(uptime / 3600);
-          const minutes = Math.floor((uptime % 3600) / 60);
-
-          // Construction du texte en anglais
-          let autoAboutText = `*━〔 ${config.botName || "NOVA-MD"} INFO 〕━*\n\n`;
-          autoAboutText += `🤖 *Version:* 2.5.0 (Stable)\n`;
-          autoAboutText += `⚙️ *Mode:* ${botMode.toUpperCase()}\n`;
-          autoAboutText += `⏰ *Uptime:* ${hours}h ${minutes}m\n`;
-          autoAboutText += `📊 *Prefixes:* ${config.prefixes.join(" ")}\n\n`;
-          autoAboutText += `✨ _Bot successfully paired and operational._`;
-
-          const botNumber = `${NovaXCode.user.id.split(":")[0]}@s.whatsapp.net`;
-          const localLogoPath = path.join(process.cwd(), "assets", "logo.PNG");
-
-          if (fs.existsSync(localLogoPath)) {
-            // Envoi du logo local avec le texte en description directement sur votre WhatsApp
-            const logoBuffer = fs.readFileSync(localLogoPath);
-            await NovaXCode.sendMessage(botNumber, {
-              image: logoBuffer,
-              caption: autoAboutText,
-            });
-          } else {
-            // Fallback en texte si jamais le fichier n'est pas trouvé
-            await NovaXCode.sendMessage(botNumber, { text: autoAboutText });
-          }
-          printLog(
-            "success",
-            "📥 About message sent successfully to your WhatsApp!",
-          );
-        } catch (e) {
-          printLog(
-            "error",
-            `Failed to send automatic about message: ${e.message}`,
-          );
-        }
-
-        printLog(
-          "success",
-          `Connected to => ${JSON.stringify(NovaXCode.user, null, 2)}`,
-        );
-
-        try {
-          const botNumber = `${NovaXCode.user.id.split(":")[0]}@s.whatsapp.net`;
-          await NovaXCode.sendMessage(botNumber, {
-            text: `🤖 *Bot Connected Successfully via QR!*\n\n⏰ Time: ${new Date().toLocaleString()}\n✅ Status: Online and Ready!\n\n✅ Make sure to join below channel`,
-            contextInfo: {
-              forwardingScore: 1,
-              isForwarded: true,
-              forwardedNewsletterMessageInfo: {
-                newsletterJid: "120363429019355682@newsletter",
-                newsletterName: "NOSTRA",
-                serverMessageId: -1,
-              },
-            },
-          });
-        } catch (err) {
-          printLog(
-            "error",
-            `Failed to send connection message: ${err.message}`,
-          );
-        }
-      }, 4000); // Petit délai de sécurité pour laisser le socket se synchroniser
-    }
 
     NovaXCode.ev.on("call", async (calls) => {
       await handleCall(NovaXCode, calls);

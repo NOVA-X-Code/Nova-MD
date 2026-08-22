@@ -23,7 +23,7 @@ export default {
             txt += `✩  *Forks* : ${json.forks_count}\n`;
             txt += `✩  *Stars* : ${json.stargazers_count}\n\n`;
             txt += `💥 *NOVA MD*`;
-            const imgPath = path.join(process.cwd(), 'assets/thumb.png');
+            const imgPath = path.join(process.cwd(), 'assets/logo.png');
             const imgBuffer = fs.readFileSync(imgPath);
             await sock.sendMessage(chatId, { image: imgBuffer, caption: txt }, { quoted: message });
         }
